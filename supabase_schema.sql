@@ -49,9 +49,35 @@ CREATE TABLE IF NOT EXISTS app_users (
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ============================================================
--- INDEXES
--- ============================================================
+-- 5. COUNTER ALLOCATIONS
+--    Admin issues a physical item quota to each counter.
+--    counter_name matches the operator's display_name exactly.
+--    used is incremented each time that counter delivers an item.
+CREATE TABLE IF NOT EXISTS counter_allocations (
+  id            BIGSERIAL PRIMARY KEY,
+  counter_name  TEXT NOT NULL,
+  token_type    TEXT NOT NULL CHECK (token_type IN ('sweet','gift')),
+  allocated     INT  NOT NULL DEFAULT 0,
+  used          INT  NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (counter_name, token_type)
+);
+
+-- 6. ALLOCATION LOG
+--    Every time admin issues items to a counter, log it here.
+CREATE TABLE IF NOT EXISTS allocation_log (
+  id            BIGSERIAL PRIMARY KEY,
+  counter_name  TEXT NOT NULL,
+  token_type    TEXT NOT NULL,
+  quantity      INT  NOT NULL,
+  note          TEXT,
+  issued_by     TEXT,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_alloc_counter ON counter_allocations(counter_name);
+CREATE INDEX IF NOT EXISTS idx_alloc_log_time ON allocation_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_members_member_id ON members(member_id);
 CREATE INDEX IF NOT EXISTS idx_tokens_member_id  ON tokens(member_id);
 CREATE INDEX IF NOT EXISTS idx_tokens_type       ON tokens(token_type);
@@ -61,17 +87,19 @@ CREATE INDEX IF NOT EXISTS idx_app_users_username ON app_users(username);
 -- ============================================================
 -- ROW LEVEL SECURITY
 -- ============================================================
-ALTER TABLE members   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tokens    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE logs      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE members             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tokens              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE logs                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_users           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE counter_allocations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE allocation_log      ENABLE ROW LEVEL SECURITY;
 
--- Allow anon key to do everything (the app authenticates at the
--- application layer via app_users, not via Supabase Auth)
-CREATE POLICY "allow_all_members"   ON members   FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "allow_all_tokens"    ON tokens    FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "allow_all_logs"      ON logs      FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "allow_all_app_users" ON app_users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_members"       ON members             FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_tokens"        ON tokens              FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_logs"          ON logs                FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_app_users"     ON app_users           FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_allocations"   ON counter_allocations FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_alloc_log"     ON allocation_log      FOR ALL USING (true) WITH CHECK (true);
 
 -- ============================================================
 -- SEED: DEFAULT USERS

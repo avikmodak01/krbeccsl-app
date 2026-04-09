@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>KRBECCSL — Token QR Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ── SCREEN STYLES ───────────────────────────────────────── */
+:root {
+  --bg:#0a0a0f; --surface:#13131a; --surface2:#1c1c27; --border:#2a2a3a;
+  --accent:#f5a623; --green:#2ecc71; --purple:#9b59b6;
+  --text:#e8e8f0; --muted:#6b6b80; --red:#e74c3c;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.header-brand{font-size:15px;font-weight:800;color:var(--accent);letter-spacing:.04em;}
+.header-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+
+.main{max-width:900px;margin:0 auto;padding:28px 20px;}
+.section-title{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.09em;text-transform:uppercase;margin-bottom:12px;}
+
+/* CONTROLS */
+.controls{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:24px;}
+.controls-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:20px;}
+.field label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.09em;text-transform:uppercase;display:block;margin-bottom:7px;}
+.input{width:100%;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:14px;font-family:'Syne',sans-serif;outline:none;transition:border-color .2s;}
+.input:focus{border-color:var(--accent);}
+.input::placeholder{color:var(--muted);}
+.mono{font-family:'DM Mono',monospace!important;}
+
+/* TYPE TOGGLE */
+.type-toggle{display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.type-btn{flex:1;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;border:none;font-family:'Syne',sans-serif;background:var(--surface2);color:var(--muted);transition:all .2s;letter-spacing:.01em;}
+.type-btn.active-sweet{background:rgba(245,166,35,.15);color:var(--accent);}
+.type-btn.active-gift{background:rgba(155,89,182,.15);color:var(--purple);}
+
+/* BUTTONS */
+.btn{padding:11px 22px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;border:none;font-family:'Syne',sans-serif;transition:all .2s;}
+.btn:disabled{opacity:.35;cursor:not-allowed;}
+.btn-accent{background:var(--accent);color:#000;}
+.btn-accent:hover:not(:disabled){background:#ffb84d;}
+.btn-green{background:var(--green);color:#000;}
+.btn-green:hover:not(:disabled){filter:brightness(1.1);}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text);}
+.btn-outline:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+
+.btn-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+
+/* PREVIEW AREA */
+.preview-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;}
+.count-badge{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;background:var(--surface2);border:1px solid var(--border);}
+
+/* QR GRID */
+.qr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;}
+
+/* SINGLE QR CARD (screen view) */
+.qr-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer;transition:border-color .2s;}
+.qr-card:hover{border-color:var(--accent);}
+.qr-card.sweet{border-top:3px solid var(--accent);}
+.qr-card.gift{border-top:3px solid var(--purple);}
+.qr-canvas-wrap{background:#fff;border-radius:6px;padding:8px;display:flex;align-items:center;justify-content:center;}
+.qr-token-id{font-family:'DM Mono',monospace;font-size:16px;font-weight:700;letter-spacing:.06em;}
+.qr-type-label{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;}
+.qr-type-label.sweet{color:var(--accent);}
+.qr-type-label.gift{color:var(--purple);}
+
+/* PROGRESS */
+.progress-bar{height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin:12px 0;}
+.progress-fill{height:100%;background:var(--accent);transition:width .2s;}
+
+/* EMPTY STATE */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:200px;gap:10px;color:var(--muted);font-size:14px;}
+
+/* ── PRINT STYLES ────────────────────────────────────────── */
+@media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: #fff !important; color: #000 !important; font-family: Arial, sans-serif; margin: 0; padding: 0; }
+
+  .header, .controls, .preview-header, .no-print { display: none !important; }
+
+  /* Print grid: 4 cards per row */
+  .qr-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Each print card */
+  .qr-card {
+    background: #fff !important;
+    border: 1px solid #ccc !important;
+    border-top: none !important;
+    border-radius: 0 !important;
+    padding: 14px 10px !important;
+    margin: 0 !important;
+    width: 100% !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 6px !important;
+    box-shadow: none !important;
+  }
+
+  /* Top colour stripe */
+  .qr-card.sweet { border-top: 4px solid #f5a623 !important; }
+  .qr-card.gift  { border-top: 4px solid #9b59b6 !important; }
+
+  .qr-canvas-wrap { background: #fff !important; padding: 4px !important; border: 1px solid #eee !important; border-radius: 4px !important; }
+
+  .qr-token-id { color: #000 !important; font-size: 15px !important; letter-spacing: .05em !important; }
+
+  .qr-type-label.sweet { color: #d4860a !important; }
+  .qr-type-label.gift  { color: #7d3c98 !important; }
+
+  .org-name { color: #555 !important; font-size: 9px !important; text-align: center; display: block !important; }
+  .org-name { display: block !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="header no-print">
+  <div>
+    <div class="header-brand">🎖 KRBECCSL — 100 Years</div>
+    <div class="header-sub">Token QR Code Generator</div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <span id="readyCount" style="font-size:13px;color:var(--muted);"></span>
+    <button class="btn btn-outline" onclick="window.print()" id="printBtn" disabled>🖨 Print All</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- CONTROLS -->
+  <div class="controls no-print">
+    <div class="section-title">Configure Token Range</div>
+
+    <div class="controls-grid">
+      <!-- Type selector -->
+      <div class="field" style="grid-column:1/-1;">
+        <label>Token Type</label>
+        <div class="type-toggle">
+          <button class="type-btn active-sweet" id="btnSweet" onclick="setType('sweet')">🍬 Sweet Token (S)</button>
+          <button class="type-btn" id="btnGift"  onclick="setType('gift')">🎁 Gift Token (G)</button>
+          <button class="type-btn" id="btnBoth"  onclick="setType('both')">Both Together</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Prefix</label>
+        <input class="input mono" id="inPrefix" value="S" maxlength="3" placeholder="S or G"
+          oninput="this.value=this.value.toUpperCase()" style="letter-spacing:.1em;font-size:18px;"/>
+      </div>
+      <div class="field">
+        <label>Start Number</label>
+        <input class="input mono" id="inStart" type="number" value="1" min="1" max="9999"/>
+      </div>
+      <div class="field">
+        <label>End Number</label>
+        <input class="input mono" id="inEnd" type="number" value="50" min="1" max="9999"/>
+      </div>
+      <div class="field">
+        <label>Pad Digits (e.g. 4 → S0001)</label>
+        <input class="input mono" id="inPad" type="number" value="4" min="1" max="5"/>
+      </div>
+    </div>
+
+    <!-- Preview row -->
+    <div style="background:var(--surface2);border-radius:8px;padding:11px 16px;margin-bottom:18px;font-family:'DM Mono',monospace;font-size:13px;" id="previewLine">
+      Preview: <span style="color:var(--accent)">—</span>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-accent" onclick="generate()">⚡ Generate QR Codes</button>
+      <button class="btn btn-outline" onclick="clearAll()">✕ Clear</button>
+      <span style="font-size:12px;color:var(--muted);">Click any card to enlarge &amp; print individually</span>
+    </div>
+
+    <div class="progress-bar" id="progressBar" style="display:none;">
+      <div class="progress-fill" id="progressFill" style="width:0%"></div>
+    </div>
+    <div id="progressText" style="font-size:12px;color:var(--muted);display:none;"></div>
+  </div>
+
+  <!-- PREVIEW GRID -->
+  <div id="previewSection" style="display:none;">
+    <div class="preview-header no-print">
+      <div style="font-size:15px;font-weight:700;">Generated Tokens
+        <span class="count-badge" id="totalCount"></span>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-green" onclick="window.print()">🖨 Print All Cards</button>
+      </div>
+    </div>
+    <div class="qr-grid" id="qrGrid"></div>
+  </div>
+
+  <!-- EMPTY STATE -->
+  <div class="empty no-print" id="emptyState">
+    <div style="font-size:48px;opacity:.4;">🎖</div>
+    <div>Configure the range above and click <strong>Generate QR Codes</strong></div>
+    <div style="font-size:12px;">QR codes will appear here, ready to print</div>
+  </div>
+</div>
+
+<!-- SINGLE QR MODAL -->
+<div id="modal" onclick="closeModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;align-items:center;justify-content:center;">
+  <div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;padding:32px;display:flex;flex-direction:column;align-items:center;gap:14px;max-width:340px;width:90%;">
+    <div id="modalQR"></div>
+    <div id="modalId" style="font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:#000;letter-spacing:.06em;"></div>
+    <div id="modalType" style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;"></div>
+    <div style="font-size:11px;color:#666;text-align:center;">KRBECCSL — 100 Years Celebration</div>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button onclick="printSingle()" style="padding:10px 20px;background:#f5a623;border:none;border-radius:7px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;">🖨 Print This</button>
+      <button onclick="closeModal()" style="padding:10px 20px;background:#eee;border:none;border-radius:7px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────
+let currentType = 'sweet';
+let generatedTokens = [];
+let modalQRInstance = null;
+let currentModalData = null;
+
+// ── TYPE SELECTOR ──────────────────────────────────────────────
+function setType(t) {
+  currentType = t;
+  document.getElementById('btnSweet').className = 'type-btn' + (t==='sweet'?' active-sweet':'');
+  document.getElementById('btnGift').className  = 'type-btn' + (t==='gift'?' active-gift':'');
+  document.getElementById('btnBoth').className  = 'type-btn' + (t==='both'?' active-sweet':'');
+
+  // Auto-set prefix
+  if(t==='sweet') { document.getElementById('inPrefix').value='S'; document.getElementById('inPrefix').disabled=false; }
+  else if(t==='gift') { document.getElementById('inPrefix').value='G'; document.getElementById('inPrefix').disabled=false; }
+  else { document.getElementById('inPrefix').value='S / G'; document.getElementById('inPrefix').disabled=true; }
+  updatePreview();
+}
+
+// ── LIVE PREVIEW LINE ──────────────────────────────────────────
+function updatePreview() {
+  const start  = parseInt(document.getElementById('inStart').value)||1;
+  const end    = parseInt(document.getElementById('inEnd').value)||1;
+  const pad    = parseInt(document.getElementById('inPad').value)||3;
+  const prefix = document.getElementById('inPrefix').value||'S';
+  const count  = Math.max(0, end - start + 1);
+
+  let html = '';
+  if(currentType==='both') {
+    const s1 = 'S' + String(start).padStart(pad,'0');
+    const se = 'S' + String(end).padStart(pad,'0');
+    const g1 = 'G' + String(start).padStart(pad,'0');
+    const ge = 'G' + String(end).padStart(pad,'0');
+    html = `<span style="color:var(--accent)">${s1} → ${se}</span>  +  <span style="color:var(--purple)">${g1} → ${ge}</span>  <span style="color:var(--muted)">(${count*2} total cards)</span>`;
+  } else {
+    const id1 = prefix + String(start).padStart(pad,'0');
+    const ide = prefix + String(end).padStart(pad,'0');
+    const col  = currentType==='sweet'?'var(--accent)':'var(--purple)';
+    html = `<span style="color:${col}">${id1} → ${ide}</span>  <span style="color:var(--muted)">(${count} cards)</span>`;
+  }
+  document.getElementById('previewLine').innerHTML = 'Preview: ' + html;
+}
+
+['inStart','inEnd','inPad','inPrefix'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', updatePreview);
+});
+updatePreview();
+
+// ── BUILD TOKEN LIST ───────────────────────────────────────────
+function buildTokenList() {
+  const start  = parseInt(document.getElementById('inStart').value)||1;
+  const end    = parseInt(document.getElementById('inEnd').value)||start;
+  const pad    = parseInt(document.getElementById('inPad').value)||3;
+  const prefix = document.getElementById('inPrefix').value.trim()||'S';
+
+  const tokens = [];
+  if(currentType==='both') {
+    for(let i=start;i<=end;i++){
+      tokens.push({ id:'S'+String(i).padStart(pad,'0'), type:'sweet' });
+      tokens.push({ id:'G'+String(i).padStart(pad,'0'), type:'gift'  });
+    }
+  } else {
+    for(let i=start;i<=end;i++){
+      tokens.push({ id:prefix+String(i).padStart(pad,'0'), type:currentType });
+    }
+  }
+  return tokens;
+}
+
+// ── GENERATE ───────────────────────────────────────────────────
+async function generate() {
+  const tokens = buildTokenList();
+  if(!tokens.length){ alert('No tokens to generate. Check start/end numbers.'); return; }
+  if(tokens.length > 2000){ alert('Maximum 2000 tokens per batch. Reduce the range.'); return; }
+
+  generatedTokens = tokens;
+  const grid = document.getElementById('qrGrid');
+  grid.innerHTML = '';
+
+  // Show UI
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('previewSection').style.display = 'block';
+  document.getElementById('progressBar').style.display = 'block';
+  document.getElementById('progressText').style.display = 'block';
+  document.getElementById('printBtn').disabled = true;
+  document.getElementById('totalCount').textContent = tokens.length + ' tokens';
+
+  // Generate QRs in batches to keep UI responsive
+  const BATCH = 20;
+  for(let i=0; i<tokens.length; i+=BATCH){
+    const batch = tokens.slice(i, i+BATCH);
+    batch.forEach(t => grid.appendChild(makeCard(t)));
+
+    const pct = Math.min(100, Math.round((i+BATCH)/tokens.length*100));
+    document.getElementById('progressFill').style.width = pct+'%';
+    document.getElementById('progressText').textContent =
+      `Generating… ${Math.min(i+BATCH,tokens.length)} / ${tokens.length}`;
+
+    // Yield to browser
+    await new Promise(r=>setTimeout(r,0));
+  }
+
+  document.getElementById('progressBar').style.display = 'none';
+  document.getElementById('progressText').style.display = 'none';
+  document.getElementById('printBtn').disabled = false;
+  document.getElementById('readyCount').textContent = tokens.length + ' cards ready';
+}
+
+// ── BUILD ONE QR CARD ──────────────────────────────────────────
+function makeCard(token) {
+  const wrap = document.createElement('div');
+  wrap.className = `qr-card ${token.type}`;
+  wrap.title = 'Click to enlarge';
+  wrap.onclick = () => openModal(token);
+
+  // QR container
+  const qrWrap = document.createElement('div');
+  qrWrap.className = 'qr-canvas-wrap';
+  const qrDiv = document.createElement('div');
+  qrDiv.id = 'qr_' + token.id;
+  qrDiv.style.cssText = 'width:140px;height:140px;';
+  qrWrap.appendChild(qrDiv);
+
+  // Labels
+  const idLabel   = document.createElement('div');
+  idLabel.className = 'qr-token-id';
+  idLabel.textContent = token.id;
+
+  const typeLabel = document.createElement('div');
+  typeLabel.className = 'qr-type-label ' + token.type;
+  typeLabel.textContent = token.type === 'sweet' ? '🍬 Sweet Token' : '🎁 Gift Token';
+
+  const orgLabel  = document.createElement('div');
+  orgLabel.className = 'org-name';
+  orgLabel.textContent = 'KRBECCSL — 100 Years';
+  orgLabel.style.cssText = 'font-size:9px;color:var(--muted);text-align:center;';
+
+  wrap.appendChild(qrWrap);
+  wrap.appendChild(idLabel);
+  wrap.appendChild(typeLabel);
+  wrap.appendChild(orgLabel);
+
+  // Generate QR (token_id is the only data — matches what the scanner reads)
+  try {
+    new QRCode(qrDiv, {
+      text: token.id,
+      width: 140, height: 140,
+      colorDark: '#000000', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.H
+    });
+  } catch(e) { console.log('QR error:', e); }
+
+  return wrap;
+}
+
+// ── CLEAR ──────────────────────────────────────────────────────
+function clearAll() {
+  document.getElementById('qrGrid').innerHTML = '';
+  document.getElementById('previewSection').style.display = 'none';
+  document.getElementById('emptyState').style.display = 'flex';
+  document.getElementById('printBtn').disabled = true;
+  document.getElementById('readyCount').textContent = '';
+  generatedTokens = [];
+}
+
+// ── MODAL (single card zoom) ───────────────────────────────────
+function openModal(token) {
+  currentModalData = token;
+  document.getElementById('modalId').textContent = token.id;
+  document.getElementById('modalType').textContent =
+    token.type === 'sweet' ? '🍬 Sweet Token' : '🎁 Gift Token';
+  document.getElementById('modalType').style.color =
+    token.type === 'sweet' ? '#d4860a' : '#7d3c98';
+
+  const qrDiv = document.getElementById('modalQR');
+  qrDiv.innerHTML = '';
+  try {
+    new QRCode(qrDiv, {
+      text: token.id,
+      width: 200, height: 200,
+      colorDark: '#000000', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.H
+    });
+  } catch(e){}
+
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+  currentModalData = null;
+}
+
+function printSingle() {
+  if(!currentModalData) return;
+  const t = currentModalData;
+  // Get QR image from modal
+  const img = document.querySelector('#modalQR img');
+  const src = img ? img.src : (document.querySelector('#modalQR canvas')?.toDataURL()||'');
+  const typeColor = t.type==='sweet' ? '#f5a623' : '#9b59b6';
+  const w = window.open('','_blank','width=380,height=480');
+  w.document.write(`<!DOCTYPE html><html><head>
+    <style>
+      body{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;font-family:Arial,sans-serif;}
+      .card{border:1px solid #ddd;border-top:5px solid ${typeColor};border-radius:8px;padding:24px 20px;text-align:center;width:240px;}
+      .org{font-size:9px;color:#999;margin-bottom:12px;letter-spacing:.05em;text-transform:uppercase;}
+      img{width:180px;height:180px;display:block;margin:0 auto 12px;}
+      .id{font-family:'Courier New',monospace;font-size:22px;font-weight:700;letter-spacing:.08em;color:#000;}
+      .type{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:${typeColor};margin-top:4px;}
+      .footer{font-size:9px;color:#aaa;margin-top:10px;}
+    </style>
+  </head><body><div class="card">
+    <div class="org">KRBECCSL — 100 Years Celebration</div>
+    <img src="${src}"/>
+    <div class="id">${t.id}</div>
+    <div class="type">${t.type==='sweet'?'🍬 Sweet Token':'🎁 Gift Token'}</div>
+    <div class="footer">Present this card at the distribution counter</div>
+  </div><script>window.onload=()=>window.print()<\/script></body></html>`);
+  w.document.close();
+}
+
+// Keyboard: Escape closes modal
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+</script>
+</body>
+</html>
