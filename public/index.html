@@ -1,0 +1,1686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>KRBECCSL — 100 Years Memento Distribution</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:#0a0a0f; --surface:#13131a; --surface2:#1c1c27; --border:#2a2a3a;
+    --accent:#f5a623; --accent2:#e85d4a; --green:#2ecc71; --blue:#3498db;
+    --purple:#9b59b6; --text:#e8e8f0; --muted:#6b6b80; --red:#e74c3c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+  #root{min-height:100vh;}
+
+  /* NAV */
+  .nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;position:sticky;top:0;z-index:100;overflow-x:auto;}
+  .nav-brand{font-size:14px;font-weight:800;letter-spacing:.05em;color:var(--accent);padding:16px 16px 16px 0;border-right:1px solid var(--border);margin-right:4px;white-space:nowrap;flex-shrink:0;}
+  .nav-tab{padding:18px 14px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;flex-shrink:0;}
+  .nav-tab:hover{color:var(--text);}
+  .nav-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .nav-right{margin-left:auto;display:flex;align-items:center;gap:12px;flex-shrink:0;padding-left:12px;}
+  .nav-user{font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;white-space:nowrap;}
+  .btn-sm{padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:'Syne',sans-serif;transition:all .2s;white-space:nowrap;}
+  .btn-sm:hover{border-color:var(--accent);color:var(--accent);}
+
+  /* PAGE */
+  .page{padding:28px 20px;max-width:1100px;margin:0 auto;}
+  .page-title{font-size:22px;font-weight:800;margin-bottom:24px;letter-spacing:-.02em;}
+  .page-title span{color:var(--accent);}
+
+  /* CARDS */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px;}
+  .card+.card{margin-top:16px;}
+
+  /* FORM */
+  .input{width:100%;padding:12px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;font-family:'Syne',sans-serif;outline:none;transition:border-color .2s;}
+  .input:focus{border-color:var(--accent);}
+  .input::placeholder{color:var(--muted);}
+  .label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.09em;text-transform:uppercase;margin-bottom:8px;display:block;}
+
+  /* BUTTONS */
+  .btn{padding:13px 22px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;border:none;font-family:'Syne',sans-serif;transition:all .2s;letter-spacing:.01em;}
+  .btn:disabled{opacity:.35;cursor:not-allowed;}
+  .btn-accent{background:var(--accent);color:#000;}
+  .btn-accent:hover:not(:disabled){background:#ffb84d;}
+  .btn-green{background:var(--green);color:#000;}
+  .btn-green:hover:not(:disabled){filter:brightness(1.1);}
+  .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text);}
+  .btn-outline:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+  .btn-full{width:100%;}
+  .btn-big{padding:18px 28px;font-size:17px;border-radius:10px;}
+
+  /* TOKEN CHIP */
+  .token-chip{display:inline-flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 16px;}
+  .token-chip-id{font-family:'DM Mono',monospace;font-size:22px;font-weight:700;letter-spacing:.05em;}
+  .token-chip-type{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
+  .token-chip-type.sweet{color:var(--accent);}
+  .token-chip-type.gift{color:var(--purple);}
+
+  /* MEMBER */
+  .member-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px 20px;}
+  .member-id{font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);}
+  .member-name{font-size:20px;font-weight:700;margin-top:2px;}
+  .token-status{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+  .badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.05em;}
+  .badge-green{background:rgba(46,204,113,.15);color:var(--green);border:1px solid rgba(46,204,113,.3);}
+  .badge-yellow{background:rgba(245,166,35,.15);color:var(--accent);border:1px solid rgba(245,166,35,.3);}
+  .badge-gray{background:rgba(107,107,128,.15);color:var(--muted);border:1px solid rgba(107,107,128,.2);}
+
+  /* SEARCH */
+  .search-results{border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-top:8px;max-height:240px;overflow-y:auto;}
+  .search-item{padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .15s;border-bottom:1px solid var(--border);}
+  .search-item:last-child{border-bottom:none;}
+  .search-item:hover{background:var(--surface2);}
+  .search-item-id{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);min-width:70px;}
+
+  /* STEP BAR */
+  .steps{display:flex;margin-bottom:20px;}
+  .step{flex:1;padding:10px 14px;font-size:11px;font-weight:700;color:var(--muted);border-bottom:2px solid var(--border);letter-spacing:.06em;text-transform:uppercase;}
+  .step.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .step.done{color:var(--green);border-bottom-color:var(--green);}
+
+  /* SCAN RESULT */
+  .scan-result{border-radius:10px;padding:20px;}
+  .scan-result.success{background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.3);}
+  .scan-result.error{background:rgba(231,76,60,.08);border:1px solid rgba(231,76,60,.3);}
+  .scan-result.warning{background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.3);}
+
+  /* SCANNER */
+  .scanner-box{border:2px dashed var(--border);border-radius:12px;overflow:hidden;}
+
+  /* DASHBOARD */
+  .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:14px;}
+  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;}
+  .stat-val{font-size:38px;font-weight:800;line-height:1;}
+  .stat-label{font-size:11px;color:var(--muted);margin-top:6px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;}
+  .col-blue{border-color:rgba(52,152,219,.3)!important;}
+  .col-accent{border-color:rgba(245,166,35,.3)!important;}
+  .col-purple{border-color:rgba(155,89,182,.3)!important;}
+  .col-green{border-color:rgba(46,204,113,.3)!important;}
+  .col-red{border-color:rgba(232,93,74,.3)!important;}
+
+  /* FEED */
+  .feed-item{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);}
+  .feed-item:last-child{border-bottom:none;}
+  .feed-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0;}
+  .feed-dot.sweet{background:var(--accent);}
+  .feed-dot.gift{background:var(--purple);}
+  .feed-text{font-size:13px;line-height:1.4;}
+  .feed-time{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
+
+  /* GRID */
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  @media(max-width:720px){.grid-2{grid-template-columns:1fr;}}
+
+  /* LOGIN */
+  .login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(ellipse at 30% 50%,rgba(245,166,35,.07) 0%,transparent 60%),var(--bg);}
+  .login-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:40px;width:100%;max-width:400px;}
+  .login-title{font-size:24px;font-weight:800;margin-bottom:4px;}
+  .login-sub{color:var(--muted);font-size:14px;margin-bottom:32px;}
+
+  /* ALERT */
+  .alert{padding:12px 16px;border-radius:8px;font-size:13px;font-weight:600;}
+  .alert-err{background:rgba(231,76,60,.1);color:var(--red);border:1px solid rgba(231,76,60,.2);}
+  .alert-ok{background:rgba(46,204,113,.1);color:var(--green);border:1px solid rgba(46,204,113,.2);}
+  .alert-warn{background:rgba(245,166,35,.1);color:var(--accent);border:1px solid rgba(245,166,35,.2);}
+
+  /* MISC */
+  .mt{margin-top:16px;} .mt2{margin-top:8px;}
+  .divider{height:1px;background:var(--border);margin:18px 0;}
+  .mono{font-family:'DM Mono',monospace;}
+  .flex{display:flex;} .gap{gap:12px;} .items-center{align-items:center;} .flex-1{flex:1;}
+  .text-muted{color:var(--muted);font-size:13px;}
+  .pulse{animation:pulse 2s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .connected-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px;box-shadow:0 0 0 2px rgba(46,204,113,.3);}
+  .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:260px;gap:12px;}
+  .empty-icon{font-size:52px;opacity:.45;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const {useState,useEffect,useRef} = React;
+
+// ═══════════════════════════════════════════════════════════════
+//  DB CLIENT  — calls our own Netlify Function (/api/db)
+//  Supabase URL and key never appear in this file.
+//  They live only in Netlify environment variables server-side.
+// ═══════════════════════════════════════════════════════════════
+const sb = {
+  async _call(payload){
+    const r = await fetch("/.netlify/functions/db", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || JSON.stringify(d));
+    return d.data;
+  },
+
+  async select(table, qs=""){
+    return this._call({op:"select", table, qs});
+  },
+  async insert(table, body){
+    return this._call({op:"insert", table, body});
+  },
+  async update(table, patch, match){
+    return this._call({op:"update", table, patch, match});
+  },
+  async del(table, match){
+    return this._call({op:"del", table, match});
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  SOUND FEEDBACK
+// ═══════════════════════════════════════════════════════════════
+function beep(type){
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.frequency.value=type==="success"?880:type==="warning"?440:220;
+    g.gain.setValueAtTime(.25,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.35);
+    o.start(ctx.currentTime);o.stop(ctx.currentTime+.35);
+  }catch{}
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  QR SCANNER  (camera-based, uses html5-qrcode library)
+//  readerId must be a unique string per page instance
+// ═══════════════════════════════════════════════════════════════
+function QRScanner({readerId,onScan,label="Scan QR Code"}){
+  const [active,setActive]=useState(false);
+  const ref=useRef(null);
+
+  function start(){
+    setActive(true);
+    setTimeout(()=>{
+      if(!document.getElementById(readerId)) return;
+      try{
+        ref.current=new Html5Qrcode(readerId);
+        ref.current.start(
+          {facingMode:"environment"},
+          {fps:10,qrbox:{width:220,height:220}},
+          text=>{ onScan(text.trim()); stop(); },
+          ()=>{}
+        ).catch(e=>console.log("scanner:",e));
+      }catch(e){console.log(e);setActive(false);}
+    },300);
+  }
+  function stop(){
+    try{ref.current?.stop().catch(()=>{});}catch{}
+    setActive(false);
+  }
+  useEffect(()=>()=>{try{ref.current?.stop().catch(()=>{});}catch{};},[]);
+
+  return active?(
+    <div>
+      <div className="scanner-box" style={{maxWidth:420,margin:"0 auto"}}>
+        <div id={readerId}/>
+      </div>
+      <button className="btn btn-outline btn-full mt" onClick={stop}>✕ Stop Scanner</button>
+    </div>
+  ):(
+    <button className="btn btn-accent btn-full btn-big" onClick={start}>📷 {label}</button>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MEMBER SEARCH  (live search by name or member_id)
+// ═══════════════════════════════════════════════════════════════
+function MemberSearch({onSelect,disabled=false}){
+  const [q,setQ]=useState("");
+  const [results,setResults]=useState([]);
+  const [busy,setBusy]=useState(false);
+
+  useEffect(()=>{
+    if(!q.trim()||q.length<2){setResults([]);return;}
+    setBusy(true);
+    const t=setTimeout(async()=>{
+      try{
+        const d=await sb.select("members",
+          `or=(member_id.ilike.*${encodeURIComponent(q)}*,member_name.ilike.*${encodeURIComponent(q)}*)&limit=10`
+        );
+        setResults(d);
+      }catch{}finally{setBusy(false);}
+    },280);
+    return()=>clearTimeout(t);
+  },[q]);
+
+  function pick(m){setQ("");setResults([]);onSelect(m);}
+
+  return(
+    <div>
+      <label className="label">Search Member</label>
+      <div style={{position:"relative"}}>
+        <input className="input" placeholder="Name or Member ID…" value={q}
+          onChange={e=>setQ(e.target.value)} disabled={disabled}/>
+        {busy&&<span style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",color:"var(--muted)"}}>⟳</span>}
+      </div>
+      {results.length>0&&(
+        <div className="search-results">
+          {results.map(m=>(
+            <div className="search-item" key={m.id} onClick={()=>pick(m)}>
+              <span className="search-item-id">{m.member_id}</span>
+              <span style={{fontWeight:600}}>{m.member_name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {q.length>=2&&!results.length&&!busy&&(
+        <div className="text-muted mt2" style={{padding:"10px 14px",background:"var(--surface2)",borderRadius:8}}>
+          No members found
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOKEN BADGE  (shows current token assignment state)
+// ═══════════════════════════════════════════════════════════════
+function TokenBadge({label,tokenId,issued,delivered}){
+  if(!issued)     return <span className="badge badge-gray">{label}: Not Issued</span>;
+  if(delivered)   return <span className="badge badge-green">{label} {tokenId}: ✓ Delivered</span>;
+  return              <span className="badge badge-yellow">{label} {tokenId}: Pending</span>;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN: ISSUE TOKENS  (PAIRED mode)
+//
+//  Tokens are printed in pairs on the SAME card: S0005 + G0005.
+//  Scanning EITHER QR registers BOTH tokens to the member at once.
+//
+//  Flow:
+//    Step 1 → Scan any QR on the pair card (S or G)
+//             Extract the serial number (e.g. "0005" from "S0005")
+//             Derive both IDs: sweetId = S0005, giftId = G0005
+//    Step 2 → Validate both tokens exist and are unassigned
+//    Step 3 → Search & select member
+//             Validate member has neither sweet nor gift token yet
+//    Step 4 → Confirm → assign BOTH atomically
+// ═══════════════════════════════════════════════════════════════
+function IssueScreen({operator}){
+  const [step,setStep]=useState(1);
+  const [pair,setPair]=useState(null);       // {sweetTok, giftTok, serial, sweetId, giftId}
+  const [member,setMember]=useState(null);
+  const [memberTokens,setMemberTokens]=useState({});
+  const [loading,setLoading]=useState(false);
+  const [msg,setMsg]=useState(null);
+  const [manualId,setManualId]=useState("");
+
+  function reset(){setStep(1);setPair(null);setMember(null);setMemberTokens({});setMsg(null);}
+
+  // ── Extract serial from token_id: "S0005" → "0005", "G0012" → "0012"
+  function extractSerial(tokenId){
+    // Remove leading letter(s), keep the numeric suffix
+    const m=tokenId.match(/^[A-Za-z]+(\d+)$/);
+    return m?m[1]:null;
+  }
+
+  // ── Step 1: Scan one QR → derive both S and G token IDs ────
+  async function handleTokenScan(raw){
+    setMsg(null);
+    let tokenId=raw;
+    try{const p=JSON.parse(raw);if(p.token_id) tokenId=p.token_id;}catch{}
+    tokenId=tokenId.toUpperCase().trim();
+
+    const serial=extractSerial(tokenId);
+    if(!serial){
+      beep("error");
+      setMsg({type:"err",text:`Cannot read token ID from "${tokenId}". Expected format: S0005 or G0005.`});
+      return;
+    }
+
+    const sweetId=`S${serial}`;
+    const giftId =`G${serial}`;
+
+    try{
+      // Fetch both tokens in one go
+      const rows=await sb.select("tokens",
+        `token_id=in.(${sweetId},${giftId})`
+      );
+
+      const sweetTok=rows.find(t=>t.token_id===sweetId);
+      const giftTok =rows.find(t=>t.token_id===giftId);
+
+      // Validate both exist
+      if(!sweetTok){
+        beep("error");
+        setMsg({type:"err",text:`Sweet token "${sweetId}" is not registered. Load tokens first.`});
+        return;
+      }
+      if(!giftTok){
+        beep("error");
+        setMsg({type:"err",text:`Gift token "${giftId}" is not registered. Load tokens first.`});
+        return;
+      }
+
+      // Check neither is already assigned
+      if(sweetTok.issued||giftTok.issued){
+        beep("warning");
+        const taken=[];
+        if(sweetTok.issued) taken.push(`${sweetId} (Sweet)`);
+        if(giftTok.issued)  taken.push(`${giftId} (Gift)`);
+        setMsg({type:"warn",
+          text:`Already assigned: ${taken.join(", ")}. This token pair cannot be reused.`
+        });
+        return;
+      }
+
+      beep("success");
+      setPair({sweetTok,giftTok,serial,sweetId,giftId});
+      setStep(2);
+    }catch(e){beep("error");setMsg({type:"err",text:e.message});}
+  }
+
+  async function handleManualToken(){
+    if(!manualId.trim()) return;
+    await handleTokenScan(manualId.trim());
+    setManualId("");
+  }
+
+  // ── Step 2: Select member — validate no existing tokens ────
+  async function handleMemberSelect(m){
+    setMsg(null);
+    try{
+      const rows=await sb.select("tokens",`member_id=eq.${m.id}&issued=eq.true`);
+      const map={};
+      rows.forEach(t=>{map[t.token_type]=t;});
+
+      // Block if member already has either token type
+      const conflicts=[];
+      if(map.sweet) conflicts.push(`Sweet (${map.sweet.token_id})`);
+      if(map.gift)  conflicts.push(`Gift (${map.gift.token_id})`);
+      if(conflicts.length){
+        beep("error");
+        setMsg({type:"err",
+          text:`${m.member_name} already has: ${conflicts.join(", ")}. Cannot assign again.`
+        });
+        return;
+      }
+
+      setMember(m);
+      setMemberTokens(map);
+      setStep(3);
+    }catch(e){beep("error");setMsg({type:"err",text:e.message});}
+  }
+
+  // ── Step 3: Confirm — assign BOTH tokens atomically ────────
+  async function confirmAssign(){
+    setLoading(true);setMsg(null);
+    const now=new Date().toISOString();
+    try{
+      // Update sweet token — WHERE issued=false is the race-condition guard
+      const uSweet=await sb.update(
+        "tokens",
+        {member_id:member.id,issued:true,issued_at:now},
+        {token_id:pair.sweetId,issued:false}
+      );
+      if(!uSweet){
+        beep("error");
+        setMsg({type:"err",text:`Sweet token ${pair.sweetId} was just taken by another operator. Please scan a different pair.`});
+        setLoading(false);return;
+      }
+
+      // Update gift token
+      const uGift=await sb.update(
+        "tokens",
+        {member_id:member.id,issued:true,issued_at:now},
+        {token_id:pair.giftId,issued:false}
+      );
+      if(!uGift){
+        // Sweet succeeded but gift failed — rollback sweet
+        await sb.update("tokens",{member_id:null,issued:false,issued_at:null},{token_id:pair.sweetId}).catch(()=>{});
+        beep("error");
+        setMsg({type:"err",text:`Gift token ${pair.giftId} was just taken. Both tokens rolled back. Please scan a different pair.`});
+        setLoading(false);return;
+      }
+
+      // Log both
+      await Promise.all([
+        sb.insert("logs",{member_id:member.id,token_id:pair.sweetId,action:"issue_sweet",operator_name:operator,timestamp:now}),
+        sb.insert("logs",{member_id:member.id,token_id:pair.giftId, action:"issue_gift", operator_name:operator,timestamp:now})
+      ]).catch(()=>{});
+
+      beep("success");
+      setMsg({type:"ok",text:`✓ Both tokens assigned to ${member.member_name}.`});
+      setStep(4);
+    }catch(e){beep("error");setMsg({type:"err",text:e.message});}
+    finally{setLoading(false);}
+  }
+
+  return(
+    <div className="page">
+      <div className="page-title">Issue <span>Token Pairs</span></div>
+
+      {/* Step bar */}
+      <div className="steps">
+        {["Scan Token Card","Select Member","Confirm"].map((s,i)=>(
+          <div key={i} className={`step ${step===i+1?"active":step>i+1?"done":""}`}>
+            {step>i+1?"✓ ":""}{s}
+          </div>
+        ))}
+      </div>
+
+      {msg&&(
+        <div className={`alert ${msg.type==="err"?"alert-err":msg.type==="warn"?"alert-warn":"alert-ok"}`}
+          style={{marginBottom:16}}>{msg.text}
+        </div>
+      )}
+
+      {/* ── STEP 1: Scan ── */}
+      {step===1&&(
+        <div className="card">
+          <div style={{background:"rgba(245,166,35,.07)",border:"1px solid rgba(245,166,35,.2)",
+            borderRadius:8,padding:"11px 16px",marginBottom:18,fontSize:13,lineHeight:1.7}}>
+            <strong style={{color:"var(--accent)"}}>Paired Token Mode.</strong>{" "}
+            Scan <em>either</em> the 🍬 Sweet or 🎁 Gift QR on the card —
+            the system will automatically register <strong>both tokens</strong> to the member.
+          </div>
+          <QRScanner readerId="reader-issue" onScan={handleTokenScan} label="Scan Token Card QR"/>
+          <div className="divider"/>
+          <label className="label">Or enter Token ID manually (S0001 or G0001)</label>
+          <div className="flex gap">
+            <input className="input flex-1 mono" placeholder="e.g. S0005 or G0005"
+              value={manualId} onChange={e=>setManualId(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleManualToken()}
+              style={{letterSpacing:".05em",textTransform:"uppercase"}}/>
+            <button className="btn btn-outline" onClick={handleManualToken}>Look Up</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 2: Select member ── */}
+      {step===2&&pair&&(
+        <div className="grid-2">
+          <div className="card">
+            <div className="label" style={{marginBottom:12}}>Token Pair — Both will be assigned</div>
+            {/* Show both token chips */}
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+              <div className="token-chip" style={{borderColor:"var(--accent)"}}>
+                <span className="token-chip-id">{pair.sweetId}</span>
+                <span className="token-chip-type sweet">🍬 Sweet</span>
+              </div>
+              <div className="token-chip" style={{borderColor:"var(--purple)"}}>
+                <span className="token-chip-id">{pair.giftId}</span>
+                <span className="token-chip-type gift">🎁 Gift</span>
+              </div>
+            </div>
+            <MemberSearch onSelect={handleMemberSelect}/>
+          </div>
+          <div className="card" style={{display:"flex",flexDirection:"column",justifyContent:"center",
+            alignItems:"center",gap:14,minHeight:220}}>
+            <div style={{fontSize:40}}>🍬 + 🎁</div>
+            <div style={{fontWeight:800,fontSize:22,letterSpacing:".04em",fontFamily:"'DM Mono',monospace"}}>
+              #{pair.serial}
+            </div>
+            <div className="text-muted" style={{textAlign:"center",lineHeight:1.6}}>
+              Both tokens will be assigned<br/>to the selected member
+            </div>
+            <button className="btn btn-outline" onClick={reset}>← Scan Different Card</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 3: Confirm ── */}
+      {step===3&&pair&&member&&(
+        <div className="card" style={{maxWidth:520}}>
+          <div className="label" style={{marginBottom:14}}>Confirm Assignment</div>
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <div>
+              <div className="label">Tokens to be assigned</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <div className="token-chip" style={{borderColor:"var(--accent)"}}>
+                  <span className="token-chip-id">{pair.sweetId}</span>
+                  <span className="token-chip-type sweet">🍬 Sweet</span>
+                </div>
+                <div className="token-chip" style={{borderColor:"var(--purple)"}}>
+                  <span className="token-chip-id">{pair.giftId}</span>
+                  <span className="token-chip-type gift">🎁 Gift</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="label">Member</div>
+              <div className="member-card">
+                <div className="member-id">{member.member_id}</div>
+                <div className="member-name">{member.member_name}</div>
+                <div className="token-status">
+                  <TokenBadge label="Sweet" tokenId={memberTokens.sweet?.token_id}
+                    issued={memberTokens.sweet?.issued} delivered={memberTokens.sweet?.delivered}/>
+                  <TokenBadge label="Gift"  tokenId={memberTokens.gift?.token_id}
+                    issued={memberTokens.gift?.issued}  delivered={memberTokens.gift?.delivered}/>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="divider"/>
+          <div className="flex gap">
+            <button className="btn btn-outline flex-1" onClick={()=>{setStep(2);setMember(null);setMsg(null);}}>
+              ← Change Member
+            </button>
+            <button className="btn btn-green flex-1" onClick={confirmAssign} disabled={loading}>
+              {loading?"⟳ Assigning…":"✓ Assign Both Tokens"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 4: Success ── */}
+      {step===4&&pair&&member&&(
+        <div className="card" style={{maxWidth:520}}>
+          {msg&&<div className="alert alert-ok" style={{marginBottom:18}}>{msg.text}</div>}
+          <div style={{background:"var(--surface2)",borderRadius:10,padding:"18px 20px",marginBottom:20}}>
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+              <div className="token-chip" style={{borderColor:"var(--accent)"}}>
+                <span className="token-chip-id">{pair.sweetId}</span>
+                <span className="token-chip-type sweet">🍬 Sweet</span>
+              </div>
+              <div className="token-chip" style={{borderColor:"var(--purple)"}}>
+                <span className="token-chip-id">{pair.giftId}</span>
+                <span className="token-chip-type gift">🎁 Gift</span>
+              </div>
+            </div>
+            <div className="member-id">{member.member_id}</div>
+            <div className="member-name">{member.member_name}</div>
+          </div>
+          <button className="btn btn-accent btn-full btn-big" onClick={reset}>+ Issue Next Pair</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN: DISTRIBUTION  (sweet or gift counter)
+//
+//  Flow:
+//    Operator scans the pre-printed token QR held by member
+//    → System reads token_id from QR
+//    → Fetches token row from DB
+//    → Validates: correct type + issued=true + delivered=false
+//    → Shows member info
+//    → Operator clicks "Mark Delivered"
+//    → DB updated atomically
+// ═══════════════════════════════════════════════════════════════
+function DistributionScreen({type,operator}){
+  const [tokenRec,setTokenRec]=useState(null);
+  const [member,setMember]=useState(null);
+  const [status,setStatus]=useState(null); // null | ready | delivered | done | error
+  const [errMsg,setErrMsg]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [manualId,setManualId]=useState("");
+
+  function reset(){setTokenRec(null);setMember(null);setStatus(null);setErrMsg("");}
+
+  async function handleScan(raw){
+    reset();
+    let tokenId=raw;
+    try{const p=JSON.parse(raw);if(p.token_id) tokenId=p.token_id;}catch{}
+    tokenId=tokenId.toUpperCase().trim();
+
+    try{
+      const rows=await sb.select("tokens",`token_id=eq.${encodeURIComponent(tokenId)}`);
+      if(!rows.length){
+        beep("error");setStatus("error");
+        setErrMsg(`Token "${tokenId}" not found. Check the token ID.`);
+        return;
+      }
+      const tk=rows[0];
+
+      // Wrong counter?
+      if(tk.token_type!==type){
+        beep("error");setStatus("error");
+        setErrMsg(`Wrong counter! Token ${tokenId} is a ${tk.token_type.toUpperCase()} token — please go to the ${tk.token_type} distribution counter.`);
+        return;
+      }
+      // Not yet issued to anyone?
+      if(!tk.issued){
+        beep("error");setStatus("error");
+        setErrMsg(`Token ${tokenId} has not been issued to any member yet. Please go to the Issue Token counter first.`);
+        return;
+      }
+      // Already delivered?
+      if(tk.delivered){
+        beep("warning");setStatus("delivered");setTokenRec(tk);
+        const mems=await sb.select("members",`id=eq.${tk.member_id}`);
+        if(mems.length) setMember(mems[0]);
+        return;
+      }
+      // All good — fetch member and show
+      const mems=await sb.select("members",`id=eq.${tk.member_id}`);
+      if(!mems.length){
+        beep("error");setStatus("error");
+        setErrMsg("Member record missing. Contact admin.");
+        return;
+      }
+      beep("success");
+      setTokenRec(tk);setMember(mems[0]);setStatus("ready");
+    }catch(e){beep("error");setStatus("error");setErrMsg(e.message);}
+  }
+
+  async function markDelivered(){
+    if(!tokenRec||tokenRec.delivered) return;
+    setLoading(true);
+    try{
+      // Atomic: WHERE delivered=false ensures no double-delivery even with 2 concurrent operators
+      const updated=await sb.update(
+        "tokens",
+        {delivered:true,delivered_at:new Date().toISOString()},
+        {token_id:tokenRec.token_id,delivered:false}
+      );
+      if(!updated){
+        beep("warning");
+        setErrMsg("Already marked delivered by another counter just now.");
+        setStatus("delivered");setLoading(false);return;
+      }
+      await sb.insert("logs",{
+        member_id:member.id,token_id:tokenRec.token_id,
+        action:`deliver_${type}`,operator_name:operator,
+        timestamp:new Date().toISOString()
+      }).catch(()=>{});
+      beep("success");
+      setTokenRec(prev=>({...prev,delivered:true}));
+      setStatus("done");
+    }catch(e){beep("error");setErrMsg(e.message);}
+    finally{setLoading(false);}
+  }
+
+  const tc=type==="sweet"?"var(--accent)":"var(--purple)";
+  const te=type==="sweet"?"🍬":"🎁";
+  const tn=type.charAt(0).toUpperCase()+type.slice(1);
+
+  return(
+    <div className="page">
+      <div className="page-title">{te} <span style={{color:tc}}>{tn}</span> Distribution</div>
+      <div className="grid-2">
+
+        {/* Left column: scanner */}
+        <div className="card">
+          <p style={{color:"var(--muted)",fontSize:13,marginBottom:18,lineHeight:1.6}}>
+            Member presents their pre-printed token card. Scan the QR on it.
+          </p>
+          <QRScanner readerId="reader-distrib" onScan={handleScan} label={`Scan ${tn} Token QR`}/>
+          <div className="divider"/>
+          <label className="label">Or enter Token ID manually</label>
+          <div className="flex gap">
+            <input className="input flex-1 mono"
+              placeholder={type==="sweet"?"e.g. S0001":"e.g. G0001"}
+              value={manualId} onChange={e=>setManualId(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&(handleScan(manualId),setManualId(""))}
+              style={{letterSpacing:".05em",textTransform:"uppercase"}}/>
+            <button className="btn btn-outline" onClick={()=>{handleScan(manualId);setManualId("");}}>Validate</button>
+          </div>
+          {status&&(
+            <button className="btn btn-outline btn-full mt" onClick={reset}>🔄 Scan Next Member</button>
+          )}
+        </div>
+
+        {/* Right column: result */}
+        <div>
+          {!status&&(
+            <div className="card empty-state">
+              <div className="empty-icon">{te}</div>
+              <div className="text-muted">Waiting for scan…</div>
+            </div>
+          )}
+
+          {status==="error"&&(
+            <div className="scan-result error">
+              <div style={{fontWeight:800,fontSize:18,marginBottom:10}}>✕ Token Rejected</div>
+              <div style={{fontSize:14,lineHeight:1.65,color:"var(--text)"}}>{errMsg}</div>
+            </div>
+          )}
+
+          {status==="delivered"&&(
+            <div className="scan-result warning">
+              <div style={{fontWeight:800,fontSize:18,marginBottom:14}}>⚠ Already Collected</div>
+              {tokenRec&&(
+                <div className="token-chip" style={{borderColor:tc,marginBottom:14}}>
+                  <span className="token-chip-id">{tokenRec.token_id}</span>
+                  <span className={`token-chip-type ${type}`}>{te} {type}</span>
+                </div>
+              )}
+              {member&&(
+                <div className="member-card">
+                  <div className="member-id">{member.member_id}</div>
+                  <div className="member-name">{member.member_name}</div>
+                  <div className="token-status">
+                    <span className="badge badge-green">✓ {tn} already delivered</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {status==="ready"&&tokenRec&&member&&(
+            <div className="scan-result success">
+              <div style={{fontWeight:800,fontSize:18,marginBottom:14,color:"var(--green)"}}>✓ Valid Token</div>
+              <div className="token-chip" style={{borderColor:tc,marginBottom:16}}>
+                <span className="token-chip-id">{tokenRec.token_id}</span>
+                <span className={`token-chip-type ${type}`}>{te} {type}</span>
+              </div>
+              <div className="member-card">
+                <div className="member-id">{member.member_id}</div>
+                <div className="member-name">{member.member_name}</div>
+              </div>
+              <button className="btn btn-green btn-big btn-full mt"
+                onClick={markDelivered} disabled={loading}>
+                {loading?"⟳ Processing…":`${te} Hand Over & Mark Delivered`}
+              </button>
+              {errMsg&&<div className="alert alert-err mt">{errMsg}</div>}
+            </div>
+          )}
+
+          {status==="done"&&tokenRec&&member&&(
+            <div className="scan-result success">
+              <div style={{fontWeight:800,fontSize:22,marginBottom:14,color:"var(--green)"}}>✓ Delivered!</div>
+              <div className="token-chip" style={{borderColor:tc,marginBottom:16}}>
+                <span className="token-chip-id">{tokenRec.token_id}</span>
+                <span className={`token-chip-type ${type}`}>{te} {type}</span>
+              </div>
+              <div className="member-card">
+                <div className="member-id">{member.member_id}</div>
+                <div className="member-name">{member.member_name}</div>
+                <div className="token-status">
+                  <span className="badge badge-green">✓ {tn} delivered just now</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SHARED: exportCSV helper
+// ═══════════════════════════════════════════════════════════════
+function exportCSV(rows, filename){
+  if(!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const csv = [headers.join(","), ...rows.map(r=>headers.map(h=>`"${(r[h]??"")}"`).join(","))].join("\n");
+  const a = document.createElement("a");
+  a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+  a.download = filename;
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SHARED: ReportTable — sortable, searchable table component
+// ═══════════════════════════════════════════════════════════════
+function ReportTable({columns, rows, emptyText="No records found.", filename="report.csv"}){
+  const [search, setSearch] = useState("");
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+
+  const filtered = rows.filter(r=>
+    Object.values(r).some(v=>String(v??'').toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const sorted = sortCol ? [...filtered].sort((a,b)=>{
+    const av=String(a[sortCol]??''), bv=String(b[sortCol]??'');
+    return sortDir==="asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+  }) : filtered;
+
+  function toggleSort(col){
+    if(sortCol===col) setSortDir(d=>d==="asc"?"desc":"asc");
+    else { setSortCol(col); setSortDir("asc"); }
+  }
+
+  return(
+    <div>
+      <div className="flex gap" style={{marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+        <input className="input flex-1" style={{maxWidth:300,padding:"8px 12px",fontSize:13}}
+          placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/>
+        <span className="text-muted" style={{fontSize:12}}>{sorted.length} records</span>
+        <button className="btn btn-outline" style={{padding:"8px 14px",fontSize:12}}
+          onClick={()=>exportCSV(sorted.map(r=>{ const o={}; columns.forEach(c=>o[c.label]=r[c.key]??''); return o; }), filename)}>
+          ⬇ Export CSV
+        </button>
+      </div>
+      <div style={{overflowX:"auto",borderRadius:8,border:"1px solid var(--border)"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead>
+            <tr style={{background:"var(--surface2)"}}>
+              {columns.map(c=>(
+                <th key={c.key} onClick={()=>toggleSort(c.key)}
+                  style={{padding:"10px 14px",textAlign:"left",fontWeight:700,fontSize:11,
+                    letterSpacing:".07em",textTransform:"uppercase",color:"var(--muted)",
+                    cursor:"pointer",userSelect:"none",whiteSpace:"nowrap",borderBottom:"1px solid var(--border)"}}>
+                  {c.label} {sortCol===c.key?(sortDir==="asc"?"↑":"↓"):""}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length===0&&(
+              <tr><td colSpan={columns.length} style={{padding:"32px",textAlign:"center",color:"var(--muted)"}}>{emptyText}</td></tr>
+            )}
+            {sorted.map((r,i)=>(
+              <tr key={i} style={{borderBottom:"1px solid var(--border)",background:i%2===0?"transparent":"rgba(255,255,255,.02)"}}>
+                {columns.map(c=>(
+                  <td key={c.key} style={{padding:"10px 14px",color:c.color?c.color(r[c.key]):undefined,
+                    fontFamily:c.mono?"'DM Mono',monospace":undefined,fontSize:c.mono?12:13}}>
+                    {c.render?c.render(r[c.key],r):r[c.key]??'—'}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN: DASHBOARD + REPORTS
+// ═══════════════════════════════════════════════════════════════
+function DashboardScreen(){
+  const [activeTab, setActiveTab] = useState("overview");
+  const [stats,   setStats]   = useState(null);
+  const [feed,    setFeed]    = useState([]);
+  const [allData, setAllData] = useState(null); // {members, tokens}
+  const [loading, setLoading] = useState(true);
+  const [reportLoading, setReportLoading] = useState(false);
+
+  const fmt     = ts=>ts?new Date(ts).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
+  const fmtTime = ts=>ts?new Date(ts).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"";
+
+  const AL={
+    issue_sweet:"🍬 Sweet Issued",issue_gift:"🎁 Gift Issued",
+    deliver_sweet:"🍬 Sweet Delivered",deliver_gift:"🎁 Gift Delivered"
+  };
+
+  // Load summary stats (runs every 10s on overview tab)
+  async function loadStats(){
+    try{
+      const [members,tokens,logs]=await Promise.all([
+        sb.select("members","select=id"),
+        sb.select("tokens","select=token_type,issued,delivered"),
+        sb.select("logs","select=*&order=timestamp.desc&limit=25")
+      ]);
+      const si=tokens.filter(t=>t.token_type==="sweet"&&t.issued).length;
+      const gi=tokens.filter(t=>t.token_type==="gift"&&t.issued).length;
+      const sd=tokens.filter(t=>t.token_type==="sweet"&&t.delivered).length;
+      const gd=tokens.filter(t=>t.token_type==="gift"&&t.delivered).length;
+      const ts=tokens.filter(t=>t.token_type==="sweet").length;
+      const tg=tokens.filter(t=>t.token_type==="gift").length;
+      setStats({members:members.length,si,gi,sd,gd,ts,tg});
+      setFeed(logs);
+    }catch{}finally{setLoading(false);}
+  }
+
+  // Load full member+token data for reports (on demand)
+  async function loadReportData(){
+    setReportLoading(true);
+    try{
+      const [members, tokens] = await Promise.all([
+        sb.select("members","select=*&order=member_id.asc"),
+        sb.select("tokens","select=*")
+      ]);
+      // Build member_id→tokens map
+      const tokensByMember = {};
+      tokens.forEach(t=>{
+        if(t.member_id){
+          if(!tokensByMember[t.member_id]) tokensByMember[t.member_id]=[];
+          tokensByMember[t.member_id].push(t);
+        }
+      });
+      setAllData({members, tokens, tokensByMember});
+    }catch(e){console.log(e);}
+    finally{setReportLoading(false);}
+  }
+
+  useEffect(()=>{
+    loadStats();
+    const id=setInterval(()=>{ if(activeTab==="overview") loadStats(); },10000);
+    return()=>clearInterval(id);
+  },[]);
+
+  useEffect(()=>{
+    if(activeTab!=="overview") loadReportData();
+  },[activeTab]);
+
+  // ── Derived report data ───────────────────────────────────────
+  function getReportRows(reportType){
+    if(!allData) return [];
+    const {members, tokens, tokensByMember} = allData;
+
+    if(reportType==="unassigned"){
+      return tokens
+        .filter(t=>!t.issued && !t.member_id)
+        .map(t=>({
+          token_id: t.token_id,
+          token_type: t.token_type==="sweet"?"🍬 Sweet":"🎁 Gift",
+          status: "Unassigned"
+        }))
+        .sort((a,b)=>a.token_id.localeCompare(b.token_id));
+    }
+
+    // For member-based reports, enrich members with their token info
+    return members.map(m=>{
+      const mTokens = tokensByMember[m.id]||[];
+      const sweet = mTokens.find(t=>t.token_type==="sweet");
+      const gift  = mTokens.find(t=>t.token_type==="gift");
+      return { m, sweet, gift };
+    }).filter(({m,sweet,gift})=>{
+      if(reportType==="token_collected"){
+        // Has at least one token issued
+        return sweet?.issued || gift?.issued;
+      }
+      if(reportType==="pending_delivery"){
+        // Has token issued but at least one NOT yet delivered
+        return (sweet?.issued && !sweet?.delivered) || (gift?.issued && !gift?.delivered);
+      }
+      if(reportType==="fully_delivered"){
+        // Both sweet AND gift delivered
+        return sweet?.delivered && gift?.delivered;
+      }
+      if(reportType==="no_token"){
+        // No token issued at all
+        return !sweet?.issued && !gift?.issued;
+      }
+      return true;
+    }).map(({m,sweet,gift})=>({
+      member_id:   m.member_id,
+      member_name: m.member_name,
+      sweet_token:  sweet?.token_id||"—",
+      sweet_status: sweet?.delivered?"✓ Delivered": sweet?.issued?"Pending":"Not Issued",
+      sweet_time:   fmt(sweet?.delivered_at||sweet?.issued_at),
+      gift_token:   gift?.token_id||"—",
+      gift_status:  gift?.delivered?"✓ Delivered": gift?.issued?"Pending":"Not Issued",
+      gift_time:    fmt(gift?.delivered_at||gift?.issued_at),
+    }));
+  }
+
+  const reportTabs = [
+    { id:"overview",        label:"📊 Overview",          icon:"📊" },
+    { id:"token_collected", label:"🎟 Token Collected",    icon:"🎟" },
+    { id:"pending_delivery",label:"⏳ Pending Delivery",   icon:"⏳" },
+    { id:"fully_delivered", label:"✅ Fully Delivered",    icon:"✅" },
+    { id:"no_token",        label:"❌ No Token Yet",       icon:"❌" },
+    { id:"unassigned",      label:"📦 Unassigned Tokens",  icon:"📦" },
+  ];
+
+  const memberCols = [
+    {key:"member_id",   label:"Member ID",    mono:true},
+    {key:"member_name", label:"Name"},
+    {key:"sweet_token", label:"🍬 Token",     mono:true},
+    {key:"sweet_status",label:"🍬 Status",    color:v=>v==="✓ Delivered"?"var(--green)":v==="Pending"?"var(--accent)":"var(--muted)"},
+    {key:"sweet_time",  label:"🍬 Time",      mono:true},
+    {key:"gift_token",  label:"🎁 Token",     mono:true},
+    {key:"gift_status", label:"🎁 Status",    color:v=>v==="✓ Delivered"?"var(--green)":v==="Pending"?"var(--accent)":"var(--muted)"},
+    {key:"gift_time",   label:"🎁 Time",      mono:true},
+  ];
+
+  const unassignedCols = [
+    {key:"token_id",   label:"Token ID",   mono:true},
+    {key:"token_type", label:"Type"},
+    {key:"status",     label:"Status",     color:()=>"var(--muted)"},
+  ];
+
+  const reportFilenames = {
+    token_collected:  "token_collected.csv",
+    pending_delivery: "pending_delivery.csv",
+    fully_delivered:  "fully_delivered.csv",
+    no_token:         "no_token_issued.csv",
+    unassigned:       "unassigned_tokens.csv",
+  };
+
+  const reportEmpty = {
+    token_collected:  "No members have collected a token yet.",
+    pending_delivery: "No pending deliveries — everyone is up to date!",
+    fully_delivered:  "No members have received both items yet.",
+    no_token:         "All members have been assigned at least one token.",
+    unassigned:       "No unassigned tokens remaining.",
+  };
+
+  return(
+    <div className="page">
+      {/* Header */}
+      <div className="flex items-center" style={{justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div className="page-title" style={{marginBottom:0}}>Dashboard & <span>Reports</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span className="connected-dot pulse"/>
+          <span className="text-muted" style={{fontSize:12}}>Auto-refresh 10s</span>
+          <button className="btn btn-outline" style={{padding:"6px 14px",fontSize:12}}
+            onClick={()=>activeTab==="overview"?loadStats():loadReportData()}>
+            ↻ Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Report sub-tabs */}
+      <div style={{display:"flex",gap:0,overflowX:"auto",marginBottom:20,border:"1px solid var(--border)",borderRadius:10,overflow:"hidden"}}>
+        {reportTabs.map(t=>(
+          <button key={t.id} onClick={()=>setActiveTab(t.id)}
+            style={{flex:"0 0 auto",padding:"11px 16px",fontSize:12,fontWeight:700,
+              cursor:"pointer",border:"none",fontFamily:"'Syne',sans-serif",
+              borderRight:"1px solid var(--border)",transition:"all .2s",
+              background:activeTab===t.id?"var(--accent)":"var(--surface)",
+              color:activeTab===t.id?"#000":"var(--muted)",
+              letterSpacing:".02em",whiteSpace:"nowrap"}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── OVERVIEW TAB ── */}
+      {activeTab==="overview"&&(
+        <>
+          {loading&&<div className="text-muted">Loading…</div>}
+          {stats&&(
+            <>
+              <div className="stats-grid">
+                <div className="stat-card col-blue">
+                  <div className="stat-val" style={{color:"var(--blue)"}}>{stats.members}</div>
+                  <div className="stat-label">Total Members</div>
+                </div>
+                <div className="stat-card col-accent">
+                  <div className="stat-val" style={{color:"var(--accent)"}}>{stats.si}</div>
+                  <div className="stat-label">🍬 Sweet Issued</div>
+                </div>
+                <div className="stat-card col-purple">
+                  <div className="stat-val" style={{color:"var(--purple)"}}>{stats.gi}</div>
+                  <div className="stat-label">🎁 Gift Issued</div>
+                </div>
+                <div className="stat-card col-green">
+                  <div className="stat-val" style={{color:"var(--green)"}}>{stats.sd}</div>
+                  <div className="stat-label">🍬 Sweet Delivered</div>
+                </div>
+                <div className="stat-card col-green">
+                  <div className="stat-val" style={{color:"var(--green)"}}>{stats.gd}</div>
+                  <div className="stat-label">🎁 Gift Delivered</div>
+                </div>
+                <div className="stat-card col-red">
+                  <div className="stat-val" style={{color:"var(--accent2)"}}>{stats.si-stats.sd}</div>
+                  <div className="stat-label">🍬 Sweet Pending</div>
+                </div>
+                <div className="stat-card col-red">
+                  <div className="stat-val" style={{color:"var(--accent2)"}}>{stats.gi-stats.gd}</div>
+                  <div className="stat-label">🎁 Gift Pending</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-val" style={{color:"var(--muted)"}}>{stats.ts-stats.si}</div>
+                  <div className="stat-label">🍬 Unassigned</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-val" style={{color:"var(--muted)"}}>{stats.tg-stats.gi}</div>
+                  <div className="stat-label">🎁 Unassigned</div>
+                </div>
+              </div>
+
+              {/* Progress bars */}
+              <div className="card mt">
+                <div style={{fontWeight:700,fontSize:14,marginBottom:16}}>Completion Progress</div>
+                {[
+                  {label:"🍬 Sweet Delivered",val:stats.sd,total:stats.si,color:"var(--accent)"},
+                  {label:"🎁 Gift Delivered", val:stats.gd,total:stats.gi,color:"var(--purple)"},
+                ].map(p=>{
+                  const pct=p.total>0?Math.round(p.val/p.total*100):0;
+                  return(
+                    <div key={p.label} style={{marginBottom:16}}>
+                      <div className="flex" style={{justifyContent:"space-between",marginBottom:6,fontSize:13}}>
+                        <span style={{fontWeight:600}}>{p.label}</span>
+                        <span className="text-muted">{p.val} / {p.total} ({pct}%)</span>
+                      </div>
+                      <div style={{height:8,background:"var(--surface2)",borderRadius:4,overflow:"hidden"}}>
+                        <div style={{height:"100%",background:p.color,width:`${pct}%`,borderRadius:4,transition:"width .5s"}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Activity feed */}
+              <div className="card mt">
+                <div style={{fontWeight:700,fontSize:14,marginBottom:16}}>Live Activity Feed</div>
+                {!feed.length&&<div className="text-muted">No activity yet</div>}
+                {feed.map(f=>(
+                  <div className="feed-item" key={f.id}>
+                    <div className={`feed-dot ${f.action?.includes("sweet")?"sweet":"gift"}`}/>
+                    <div style={{flex:1}}>
+                      <div className="feed-text">
+                        {AL[f.action]||f.action}
+                        {f.token_id&&<span className="mono" style={{marginLeft:6,fontSize:12,color:"var(--muted)"}}>[{f.token_id}]</span>}
+                        <span style={{color:"var(--muted)"}}> — {f.operator_name||"Unknown"}</span>
+                      </div>
+                      <div className="feed-time">{fmtTime(f.timestamp)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* ── REPORT TABS ── */}
+      {activeTab!=="overview"&&(
+        <div className="card">
+          {/* Report header */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontWeight:800,fontSize:16}}>
+              {reportTabs.find(t=>t.id===activeTab)?.label}
+            </div>
+            <div className="text-muted" style={{fontSize:12,marginTop:4}}>
+              {activeTab==="token_collected"  && "Members who have been assigned at least one token (sweet or gift)."}
+              {activeTab==="pending_delivery" && "Members who have a token issued but haven't collected the actual item yet."}
+              {activeTab==="fully_delivered"  && "Members who have received both their sweet and gift."}
+              {activeTab==="no_token"         && "Members who have not yet been assigned any token."}
+              {activeTab==="unassigned"       && "Pre-printed tokens that have not been assigned to any member yet."}
+            </div>
+          </div>
+
+          {reportLoading?(
+            <div className="text-muted" style={{padding:"32px 0",textAlign:"center"}}>⟳ Loading report data…</div>
+          ):(
+            <ReportTable
+              columns={activeTab==="unassigned"?unassignedCols:memberCols}
+              rows={getReportRows(activeTab)}
+              emptyText={reportEmpty[activeTab]}
+              filename={reportFilenames[activeTab]}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN: IMPORT MEMBERS (CSV paste)
+// ═══════════════════════════════════════════════════════════════
+function ImportMembersScreen(){
+  const [csv,setCsv]=useState("");
+  const [preview,setPreview]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [msg,setMsg]=useState(null);
+
+  function parse(text){
+    return text.trim().split("\n").filter(l=>l.trim())
+      .map(l=>{const[member_id,member_name]=l.split(",").map(s=>s.trim().replace(/"/g,""));return{member_id,member_name};})
+      .filter(r=>r.member_id&&r.member_name);
+  }
+  useEffect(()=>{setPreview(csv.trim()?parse(csv).slice(0,5):[]);},[csv]);
+
+  async function importMembers(){
+    const rows=parse(csv);
+    if(!rows.length){setMsg({type:"err",text:"No valid rows found."});return;}
+    setLoading(true);setMsg(null);
+    let ok=0,fail=0;
+    for(const row of rows){try{await sb.insert("members",row);ok++;}catch{fail++;}}
+    setMsg({type:"ok",text:`Imported ${ok} members.${fail?` ${fail} skipped (already exist).`:""}`});
+    setCsv("");setLoading(false);
+  }
+
+  return(
+    <div className="page">
+      <div className="page-title">Import <span>Members</span></div>
+      <div className="card">
+        <p style={{color:"var(--muted)",fontSize:13,marginBottom:16,lineHeight:1.6}}>
+          Paste your member list below. One member per line, format: <span className="mono" style={{color:"var(--text)"}}>member_id, full name</span>
+        </p>
+        <label className="label">CSV Data</label>
+        <textarea className="input mono" style={{minHeight:180,resize:"vertical",fontSize:13}}
+          placeholder={"M001, Ramesh Kumar\nM002, Priya Sharma\nM003, Avik Das"}
+          value={csv} onChange={e=>setCsv(e.target.value)}/>
+        {preview.length>0&&(
+          <div className="mt" style={{background:"var(--surface2)",borderRadius:8,padding:12}}>
+            <div className="label" style={{marginBottom:8}}>Preview (first 5 rows)</div>
+            {preview.map((r,i)=>(
+              <div key={i} className="flex gap items-center" style={{padding:"3px 0"}}>
+                <span className="mono" style={{fontSize:12,color:"var(--muted)",minWidth:80}}>{r.member_id}</span>
+                <span style={{fontSize:13}}>{r.member_name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {msg&&<div className={`alert mt ${msg.type==="err"?"alert-err":"alert-ok"}`}>{msg.text}</div>}
+        <div className="divider"/>
+        <button className="btn btn-accent" onClick={importMembers} disabled={loading||!csv.trim()}>
+          {loading?"⟳ Importing…":"↑ Import Members"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN: LOAD PRE-PRINTED TOKENS INTO DATABASE
+//  Run this ONCE before the event to register all physical token IDs.
+//  e.g. You have 500 sweet tokens printed S001–S500 and
+//       500 gift tokens printed G001–G500
+// ═══════════════════════════════════════════════════════════════
+function LoadTokensScreen(){
+  const [prefix,setPrefix]=useState("S");
+  const [start,setStart]=useState(1);
+  const [end,setEnd]=useState(100);
+  const [loading,setLoading]=useState(false);
+  const [msg,setMsg]=useState(null);
+  const [progress,setProgress]=useState(null);
+
+  async function generate(){
+    const type=prefix==="S"?"sweet":"gift";
+    const count=end-start+1;
+    if(count<1||count>2000){setMsg({type:"err",text:"Range must be between 1 and 2000."});return;}
+    setLoading(true);setMsg(null);setProgress(0);
+    let ok=0,fail=0;
+    for(let i=start;i<=end;i++){
+      const token_id=`${prefix}${String(i).padStart(4,"0")}`;
+      try{await sb.insert("tokens",{token_id,token_type:type,issued:false,delivered:false});ok++;}
+      catch{fail++;}
+      if((i-start+1)%10===0) setProgress(Math.round((i-start+1)/count*100));
+    }
+    setMsg({type:"ok",text:`Created ${ok} ${type} tokens (${prefix}${String(start).padStart(4,"0")}–${prefix}${String(end).padStart(4,"0")}).${fail?` ${fail} already existed and were skipped.`:""}`});
+    setProgress(null);setLoading(false);
+  }
+
+  const count=Math.max(0,end-start+1);
+  const example=`${prefix}${String(start).padStart(4,"0")} → ${prefix}${String(end).padStart(4,"0")}`;
+
+  return(
+    <div className="page">
+      <div className="page-title">Load Pre-Printed <span>Tokens</span></div>
+      <div className="card" style={{maxWidth:500}}>
+        <div style={{background:"rgba(245,166,35,.08)",border:"1px solid rgba(245,166,35,.25)",borderRadius:8,padding:"12px 16px",marginBottom:20,fontSize:13,lineHeight:1.7}}>
+          <strong style={{color:"var(--accent)"}}>Run this once before the event.</strong><br/>
+          Enter the range of token IDs that are physically printed on your token cards.
+          The system will register them in the database so they can be scanned and assigned to members.
+        </div>
+
+        <label className="label">Token Type</label>
+        <div className="flex gap" style={{marginBottom:18}}>
+          <button className={`btn flex-1 ${prefix==="S"?"btn-accent":"btn-outline"}`} onClick={()=>setPrefix("S")}>
+            🍬 Sweet Tokens (S)
+          </button>
+          <button className={`btn flex-1 ${prefix==="G"?"btn-green":"btn-outline"}`} onClick={()=>setPrefix("G")}>
+            🎁 Gift Tokens (G)
+          </button>
+        </div>
+
+        <div className="flex gap" style={{marginBottom:16}}>
+          <div style={{flex:1}}>
+            <label className="label">Start Number</label>
+            <input className="input mono" type="number" min="1" value={start} onChange={e=>setStart(+e.target.value)}/>
+          </div>
+          <div style={{flex:1}}>
+            <label className="label">End Number</label>
+            <input className="input mono" type="number" min="1" value={end} onChange={e=>setEnd(+e.target.value)}/>
+          </div>
+        </div>
+
+        <div style={{background:"var(--surface2)",borderRadius:8,padding:"12px 16px",marginBottom:16,fontFamily:"'DM Mono',monospace",fontSize:14}}>
+          <span style={{color:"var(--muted)",fontSize:11,display:"block",marginBottom:4,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",textTransform:"uppercase",fontWeight:700}}>Will Register</span>
+          <span style={{color:"var(--accent)"}}>{example}</span>
+          <span style={{color:"var(--muted)",fontSize:12,marginLeft:10}}>({count} tokens)</span>
+        </div>
+
+        {progress!==null&&(
+          <div style={{marginBottom:16}}>
+            <div style={{height:6,background:"var(--border)",borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",background:"var(--green)",width:`${progress}%`,transition:"width .3s"}}/>
+            </div>
+            <div className="text-muted mt2">{progress}% complete…</div>
+          </div>
+        )}
+
+        {msg&&<div className={`alert ${msg.type==="err"?"alert-err":"alert-ok"}`} style={{marginBottom:16}}>{msg.text}</div>}
+
+        <button className="btn btn-accent btn-full" onClick={generate} disabled={loading||count<1}>
+          {loading?"⟳ Creating Tokens…":`Register ${count} Tokens in Database`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ROLE DEFINITIONS
+//  Each role maps to a list of allowed tab IDs.
+//  Admin sees everything including the Users management tab.
+// ═══════════════════════════════════════════════════════════════
+const ROLES = {
+  admin:       { label:"Admin",            color:"#e74c3c", tabs:["issue","sweet","gift","dashboard","members","tokens","users"] },
+  issue:       { label:"Token Issue",      color:"#f5a623", tabs:["issue"] },
+  sweet:       { label:"Sweet Counter",    color:"#f5a623", tabs:["sweet"] },
+  gift:        { label:"Gift Counter",     color:"#9b59b6", tabs:["gift"] },
+  viewer:      { label:"Viewer",           color:"#3498db", tabs:["dashboard"] },
+};
+
+// ── SHA-256 password hash (browser native) ────────────────────
+async function sha256(text){
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LOGIN SCREEN
+// ═══════════════════════════════════════════════════════════════
+function LoginScreen({onLogin}){
+  const [username,setUsername]=useState("");
+  const [password,setPassword]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState("");
+
+  async function handleLogin(e){
+    e.preventDefault();
+    if(!username.trim()||!password.trim()){setErr("Enter username and password.");return;}
+    setLoading(true);setErr("");
+    try{
+      const hash = await sha256(password);
+      const rows = await sb.select("app_users",
+        `username=eq.${encodeURIComponent(username.trim().toLowerCase())}&password_hash=eq.${hash}&select=*`
+      );
+      if(!rows.length){setErr("Invalid username or password.");setLoading(false);return;}
+      const user = rows[0];
+      if(!user.active){setErr("Your account has been disabled. Contact admin.");setLoading(false);return;}
+      onLogin(user);
+    }catch(e){setErr("Login failed: "+e.message);}
+    finally{setLoading(false);}
+  }
+
+  return(
+    <div className="login-screen">
+      <div className="login-box">
+        <div style={{fontSize:36,marginBottom:16}}>🎖</div>
+        <div className="login-title">Memento Distribution</div>
+        <div className="login-sub">KRBECCSL — 100 Years Celebration</div>
+        {err&&<div className="alert alert-err" style={{marginBottom:16}}>{err}</div>}
+        <form onSubmit={handleLogin}>
+          <label className="label">Username</label>
+          <input className="input mono" placeholder="your.username" value={username}
+            onChange={e=>setUsername(e.target.value)} style={{marginBottom:12}} required
+            autoCapitalize="none" autoCorrect="off"/>
+          <label className="label">Password</label>
+          <input className="input" type="password" placeholder="••••••••" value={password}
+            onChange={e=>setPassword(e.target.value)} style={{marginBottom:20}} required/>
+          <button type="submit" className="btn btn-accent btn-full" disabled={loading}>
+            {loading?"⟳ Signing in…":"Sign In"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ADMIN: USER MANAGEMENT SCREEN
+// ═══════════════════════════════════════════════════════════════
+function UsersScreen({currentUser}){
+  const [users,setUsers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showForm,setShowForm]=useState(false);
+  const [editUser,setEditUser]=useState(null);
+  const [msg,setMsg]=useState(null);
+
+  // Form state
+  const [fName,setFName]=useState("");
+  const [fUsername,setFUsername]=useState("");
+  const [fPassword,setFPassword]=useState("");
+  const [fRole,setFRole]=useState("issue");
+
+  async function loadUsers(){
+    setLoading(true);
+    try{ const d=await sb.select("app_users","select=*&order=role.asc,display_name.asc"); setUsers(d); }
+    catch(e){setMsg({type:"err",text:e.message});}
+    finally{setLoading(false);}
+  }
+
+  useEffect(()=>{loadUsers();},[]);
+
+  function openAdd(){ setEditUser(null);setFName("");setFUsername("");setFPassword("");setFRole("issue");setShowForm(true);setMsg(null); }
+  function openEdit(u){ setEditUser(u);setFName(u.display_name);setFUsername(u.username);setFPassword("");setFRole(u.role);setShowForm(true);setMsg(null); }
+  function cancelForm(){ setShowForm(false);setEditUser(null);setMsg(null); }
+
+  async function saveUser(){
+    if(!fName.trim()||!fUsername.trim()){setMsg({type:"err",text:"Name and username are required."});return;}
+    if(!editUser&&!fPassword.trim()){setMsg({type:"err",text:"Password is required for new users."});return;}
+    setLoading(true);setMsg(null);
+    try{
+      if(editUser){
+        // Update existing
+        const patch={display_name:fName.trim(),username:fUsername.trim().toLowerCase(),role:fRole};
+        if(fPassword.trim()) patch.password_hash=await sha256(fPassword.trim());
+        await sb.update("app_users",patch,{id:editUser.id});
+        setMsg({type:"ok",text:`User "${fName}" updated.`});
+      } else {
+        // Create new
+        const hash=await sha256(fPassword.trim());
+        await sb.insert("app_users",{
+          display_name:fName.trim(),
+          username:fUsername.trim().toLowerCase(),
+          password_hash:hash,
+          role:fRole,
+          active:true
+        });
+        setMsg({type:"ok",text:`User "${fName}" created.`});
+      }
+      setShowForm(false);setEditUser(null);
+      loadUsers();
+    }catch(e){setMsg({type:"err",text:e.message});}
+    finally{setLoading(false);}
+  }
+
+  async function toggleActive(u){
+    if(u.id===currentUser.id){setMsg({type:"err",text:"You cannot disable your own account."});return;}
+    try{
+      await sb.update("app_users",{active:!u.active},{id:u.id});
+      setMsg({type:"ok",text:`${u.display_name} ${u.active?"disabled":"enabled"}.`});
+      loadUsers();
+    }catch(e){setMsg({type:"err",text:e.message});}
+  }
+
+  async function deleteUser(u){
+    if(u.id===currentUser.id){setMsg({type:"err",text:"You cannot delete your own account."});return;}
+    if(!window.confirm(`Delete user "${u.display_name}"? This cannot be undone.`))return;
+    try{
+      await sb.del("app_users",{id:u.id});
+      setMsg({type:"ok",text:`User "${u.display_name}" deleted.`});
+      loadUsers();
+    }catch(e){setMsg({type:"err",text:e.message});}
+  }
+
+  const roleGroups = {};
+  users.forEach(u=>{ if(!roleGroups[u.role]) roleGroups[u.role]=[]; roleGroups[u.role].push(u); });
+
+  return(
+    <div className="page">
+      <div className="flex items-center" style={{justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
+        <div className="page-title" style={{marginBottom:0}}>User <span>Management</span></div>
+        <button className="btn btn-accent" onClick={openAdd}>+ Add User</button>
+      </div>
+
+      {msg&&<div className={`alert ${msg.type==="err"?"alert-err":"alert-ok"}`} style={{marginBottom:16}}>{msg.text}</div>}
+
+      {/* ADD / EDIT FORM */}
+      {showForm&&(
+        <div className="card" style={{marginBottom:20,border:"1px solid var(--accent)",borderRadius:12}}>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:18}}>{editUser?"Edit User":"Add New User"}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+            <div>
+              <label className="label">Display Name</label>
+              <input className="input" placeholder="Full Name" value={fName} onChange={e=>setFName(e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Username</label>
+              <input className="input mono" placeholder="login.username" value={fUsername}
+                onChange={e=>setFUsername(e.target.value)} autoCapitalize="none"/>
+            </div>
+            <div>
+              <label className="label">{editUser?"New Password (leave blank to keep)":"Password"}</label>
+              <input className="input" type="password" placeholder="••••••••" value={fPassword} onChange={e=>setFPassword(e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Role</label>
+              <select className="input" value={fRole} onChange={e=>setFRole(e.target.value)}
+                style={{cursor:"pointer"}}>
+                {Object.entries(ROLES).map(([k,v])=>(
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Role permissions preview */}
+          <div style={{background:"var(--surface2)",borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:12}}>
+            <span style={{color:"var(--muted)",fontWeight:700,marginRight:8}}>Access:</span>
+            {ROLES[fRole].tabs.map(t=>(
+              <span key={t} style={{marginRight:6,padding:"2px 8px",background:"rgba(245,166,35,.15)",color:"var(--accent)",borderRadius:4,fontWeight:700}}>
+                {t}
+              </span>
+            ))}
+          </div>
+
+          {msg&&<div className={`alert ${msg.type==="err"?"alert-err":"alert-ok"}`} style={{marginBottom:14}}>{msg.text}</div>}
+          <div className="flex gap">
+            <button className="btn btn-green" onClick={saveUser} disabled={loading}>
+              {loading?"⟳ Saving…":editUser?"✓ Update User":"✓ Create User"}
+            </button>
+            <button className="btn btn-outline" onClick={cancelForm}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* USER LIST grouped by role */}
+      {loading&&!showForm&&<div className="text-muted">Loading users…</div>}
+      {Object.entries(ROLES).map(([roleKey,roleDef])=>{
+        const group=roleGroups[roleKey]||[];
+        if(!group.length) return null;
+        return(
+          <div key={roleKey} style={{marginBottom:20}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <span style={{width:10,height:10,borderRadius:"50%",background:roleDef.color,display:"inline-block"}}/>
+              <span style={{fontWeight:800,fontSize:13,letterSpacing:".05em",textTransform:"uppercase",color:roleDef.color}}>
+                {roleDef.label}
+              </span>
+              <span style={{fontSize:12,color:"var(--muted)"}}>({group.length} user{group.length>1?"s":""})</span>
+            </div>
+            <div style={{display:"grid",gap:10}}>
+              {group.map(u=>(
+                <div key={u.id} className="card" style={{
+                  padding:"16px 20px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",
+                  opacity:u.active?1:0.5,borderColor:u.active?"var(--border)":"var(--accent2)"
+                }}>
+                  {/* Avatar */}
+                  <div style={{width:40,height:40,borderRadius:"50%",background:roleDef.color+"22",
+                    border:`2px solid ${roleDef.color}`,display:"flex",alignItems:"center",
+                    justifyContent:"center",fontWeight:800,fontSize:16,color:roleDef.color,flexShrink:0}}>
+                    {u.display_name.charAt(0).toUpperCase()}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:15}}>
+                      {u.display_name}
+                      {u.id===currentUser.id&&<span style={{marginLeft:8,fontSize:11,color:"var(--muted)",fontWeight:600}}>(you)</span>}
+                    </div>
+                    <div className="mono" style={{fontSize:12,color:"var(--muted)",marginTop:2}}>{u.username}</div>
+                  </div>
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    {!u.active&&<span style={{fontSize:11,fontWeight:700,color:"var(--accent2)",padding:"2px 8px",border:"1px solid var(--accent2)",borderRadius:4}}>DISABLED</span>}
+                    <button className="btn-sm" onClick={()=>openEdit(u)}>✏ Edit</button>
+                    <button className="btn-sm" onClick={()=>toggleActive(u)}
+                      style={{borderColor:u.active?"var(--accent2)":"var(--green)",color:u.active?"var(--accent2)":"var(--green)"}}>
+                      {u.active?"⊘ Disable":"✓ Enable"}
+                    </button>
+                    {u.id!==currentUser.id&&(
+                      <button className="btn-sm" onClick={()=>deleteUser(u)}
+                        style={{borderColor:"var(--accent2)",color:"var(--accent2)"}}>
+                        🗑 Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ROOT APP
+// ═══════════════════════════════════════════════════════════════
+function App(){
+  const [user,setUser]=useState(null);   // full user object from app_users
+  const [tab,setTab]=useState(null);
+
+  // On login, set default tab to first allowed tab for role
+  function handleLogin(u){
+    setUser(u);
+    const allowed=ROLES[u.role]?.tabs||[];
+    setTab(allowed[0]||"issue");
+  }
+
+  if(!user) return <LoginScreen onLogin={handleLogin}/>;
+
+  const allowedTabs=ROLES[user.role]?.tabs||[];
+
+  const ALL_TABS=[
+    {id:"issue",     label:"Issue Tokens"},
+    {id:"sweet",     label:"🍬 Sweet Counter"},
+    {id:"gift",      label:"🎁 Gift Counter"},
+    {id:"dashboard", label:"📊 Dashboard"},
+    {id:"members",   label:"Members"},
+    {id:"tokens",    label:"Load Tokens"},
+    {id:"users",     label:"👥 Users"},
+  ];
+
+  const visibleTabs=ALL_TABS.filter(t=>allowedTabs.includes(t.id));
+  const roleDef=ROLES[user.role];
+
+  // Guard: if current tab not allowed, reset to first allowed
+  if(tab&&!allowedTabs.includes(tab)) setTab(allowedTabs[0]);
+
+  return(
+    <div>
+      <nav className="nav">
+        <div className="nav-brand">KRBECCSL 100Y</div>
+        {visibleTabs.map(t=>(
+          <div key={t.id} className={`nav-tab ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</div>
+        ))}
+        <div className="nav-right">
+          )}
+          {/* Role badge */}
+          <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:12,
+            background:roleDef.color+"22",color:roleDef.color,border:`1px solid ${roleDef.color}44`}}>
+            {roleDef.label}
+          </span>
+          <span className="nav-user">{user.display_name}</span>
+          <button className="btn-sm" onClick={()=>setUser(null)}>Sign Out</button>
+        </div>
+      </nav>
+
+      {tab==="issue"     && <IssueScreen      operator={user.display_name}/>}
+      {tab==="sweet"     && <DistributionScreen type="sweet" operator={user.display_name}/>}
+      {tab==="gift"      && <DistributionScreen type="gift"  operator={user.display_name}/>}
+      {tab==="dashboard" && <DashboardScreen/>}
+      {tab==="members"   && <ImportMembersScreen/>}
+      {tab==="tokens"    && <LoadTokensScreen/>}
+      {tab==="users"     && user.role==="admin" && <UsersScreen currentUser={user}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
