@@ -1244,7 +1244,8 @@ function DashboardScreen(){
 
   const AL={
     issue_sweet:"🍬 Sweet Issued",issue_gift:"🎁 Gift Issued",
-    deliver_sweet:"🍬 Sweet Delivered",deliver_gift:"🎁 Gift Delivered"
+    deliver_sweet:"🍬 Sweet Delivered",deliver_gift:"🎁 Gift Delivered",
+    recall_sweet:"↩ Sweet Token Recalled",recall_gift:"↩ Gift Token Recalled"
   };
 
   // Load summary stats (runs every 10s on overview tab)
@@ -1697,7 +1698,7 @@ function LoadTokensScreen(){
 //  Admin sees everything including the Users management tab.
 // ═══════════════════════════════════════════════════════════════
 const ROLES = {
-  admin:       { label:"Admin",            color:"#e74c3c", tabs:["issue","sweet","gift","dashboard","members","tokens","users","allocations"] },
+  admin:       { label:"Admin",            color:"#e74c3c", tabs:["issue","sweet","gift","dashboard","members","tokens","users","allocations","recall"] },
   issue:       { label:"Token Issue",      color:"#f5a623", tabs:["issue"] },
   sweet:       { label:"Sweet Counter",    color:"#f5a623", tabs:["sweet"] },
   gift:        { label:"Gift Counter",     color:"#9b59b6", tabs:["gift"] },
@@ -1956,6 +1957,345 @@ function UsersScreen({currentUser}){
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  SCREEN: RECALL TOKEN  (Admin only)
+//
+//  Admin can recall an issued token pair back to unassigned,
+//  BUT only if neither the sweet nor the gift has been delivered.
+//  Search by member name/ID or by token ID.
+// ═══════════════════════════════════════════════════════════════
+function RecallTokenScreen({currentUser}){
+  const [searchQ,    setSearchQ]    = useState("");
+  const [results,    setResults]    = useState([]); // member rows
+  const [searching,  setSearching]  = useState(false);
+  const [selected,   setSelected]   = useState(null); // {member, sweetTok, giftTok}
+  const [loading,    setLoading]    = useState(false);
+  const [msg,        setMsg]        = useState(null);
+  const [recallLog,  setRecallLog]  = useState([]);
+  const [logLoading, setLogLoading] = useState(true);
+
+  // Load recent recall log on mount
+  useEffect(()=>{
+    sb.select("logs","select=*&action=like.recall_%&order=timestamp.desc&limit=30")
+      .then(d=>setRecallLog(d)).catch(()=>{})
+      .finally(()=>setLogLoading(false));
+  },[]);
+
+  // ── Search: by member name/ID or by token ID ────────────────
+  useEffect(()=>{
+    if(!searchQ.trim()||searchQ.length<2){ setResults([]); return; }
+    setSearching(true);
+    const t = setTimeout(async()=>{
+      try{
+        const q = searchQ.trim().toUpperCase();
+        // Check if it looks like a token ID (starts with S or G + digits)
+        const isTokenId = /^[SG]\d+$/i.test(q);
+
+        if(isTokenId){
+          // Search by token_id — find the token, then find its member
+          const toks = await sb.select("tokens",`token_id=eq.${encodeURIComponent(q)}`);
+          if(toks.length && toks[0].member_id){
+            const mems = await sb.select("members",`id=eq.${toks[0].member_id}`);
+            setResults(mems);
+          } else if(toks.length && !toks[0].member_id){
+            setResults([]); setMsg({type:"warn",text:`Token ${q} is not assigned to any member.`});
+          } else {
+            setResults([]);
+          }
+        } else {
+          // Search by member name or member_id
+          const enc = encodeURIComponent(searchQ.trim());
+          const mems = await sb.select("members",
+            `or=(member_id.ilike.*${enc}*,member_name.ilike.*${enc}*)&limit=10`
+          );
+          setResults(mems);
+        }
+      }catch(e){ setMsg({type:"err",text:e.message}); }
+      finally{ setSearching(false); }
+    }, 300);
+    return()=>clearTimeout(t);
+  },[searchQ]);
+
+  // ── Select a member — load their tokens ─────────────────────
+  async function selectMember(m){
+    setMsg(null); setSelected(null);
+    try{
+      const toks = await sb.select("tokens",`member_id=eq.${m.id}&issued=eq.true`);
+      const sweetTok = toks.find(t=>t.token_type==="sweet")||null;
+      const giftTok  = toks.find(t=>t.token_type==="gift") ||null;
+      setSelected({member:m, sweetTok, giftTok});
+      setResults([]);
+      setSearchQ("");
+    }catch(e){ setMsg({type:"err",text:e.message}); }
+  }
+
+  function reset(){ setSelected(null); setMsg(null); setSearchQ(""); setResults([]); }
+
+  // ── Recall both tokens (if eligible) ────────────────────────
+  async function recallTokens(){
+    if(!selected) return;
+    const {member, sweetTok, giftTok} = selected;
+
+    // Guard: block if either is already delivered
+    if(sweetTok?.delivered || giftTok?.delivered){
+      setMsg({type:"err",
+        text:"Cannot recall — at least one item has already been delivered to this member."
+      });
+      return;
+    }
+
+    if(!sweetTok && !giftTok){
+      setMsg({type:"err", text:"No issued tokens found for this member to recall."});
+      return;
+    }
+
+    if(!window.confirm(
+      `Recall ALL issued tokens for ${member.member_name}?\n\n` +
+      `${sweetTok?`🍬 Sweet: ${sweetTok.token_id}\n`:""}` +
+      `${giftTok ?`🎁 Gift:  ${giftTok.token_id}\n`:""}` +
+      `\nThese tokens will be returned to unassigned status.`
+    )) return;
+
+    setLoading(true); setMsg(null);
+    const now = new Date().toISOString();
+    try{
+      const recalls = [];
+
+      if(sweetTok){
+        await sb.update("tokens",
+          {member_id:null, issued:false, issued_at:null},
+          {token_id:sweetTok.token_id, delivered:false}
+        );
+        recalls.push(sb.insert("logs",{
+          member_id:member.id, token_id:sweetTok.token_id,
+          action:"recall_sweet", operator_name:currentUser.display_name, timestamp:now
+        }).catch(()=>{}));
+      }
+
+      if(giftTok){
+        await sb.update("tokens",
+          {member_id:null, issued:false, issued_at:null},
+          {token_id:giftTok.token_id, delivered:false}
+        );
+        recalls.push(sb.insert("logs",{
+          member_id:member.id, token_id:giftTok.token_id,
+          action:"recall_gift", operator_name:currentUser.display_name, timestamp:now
+        }).catch(()=>{}));
+      }
+
+      await Promise.all(recalls);
+      beep("success");
+      setMsg({type:"ok",
+        text:`✓ Tokens recalled from ${member.member_name}. ` +
+             `${sweetTok?sweetTok.token_id:""} ${giftTok?giftTok.token_id:""} ` +
+             `are now unassigned and can be issued to another member.`
+      });
+      // Refresh log
+      const newLog = await sb.select("logs","select=*&action=like.recall_%&order=timestamp.desc&limit=30")
+        .catch(()=>[]);
+      setRecallLog(newLog);
+      setSelected(null);
+    }catch(e){ beep("error"); setMsg({type:"err",text:e.message}); }
+    finally{ setLoading(false); }
+  }
+
+  // ── Recall a single token only ───────────────────────────────
+  async function recallSingle(tok){
+    if(!selected) return;
+    const {member} = selected;
+    if(tok.delivered){
+      setMsg({type:"err",text:`Cannot recall ${tok.token_id} — it has already been delivered.`});
+      return;
+    }
+    if(!window.confirm(`Recall ${tok.token_type} token ${tok.token_id} from ${member.member_name}?`)) return;
+    setLoading(true); setMsg(null);
+    const now = new Date().toISOString();
+    try{
+      await sb.update("tokens",
+        {member_id:null, issued:false, issued_at:null},
+        {token_id:tok.token_id, delivered:false}
+      );
+      await sb.insert("logs",{
+        member_id:member.id, token_id:tok.token_id,
+        action:`recall_${tok.token_type}`, operator_name:currentUser.display_name, timestamp:now
+      }).catch(()=>{});
+      beep("success");
+      setMsg({type:"ok", text:`✓ ${tok.token_id} recalled. It is now unassigned.`});
+      const newLog = await sb.select("logs","select=*&action=like.recall_%&order=timestamp.desc&limit=30").catch(()=>[]);
+      setRecallLog(newLog);
+      setSelected(null);
+    }catch(e){ beep("error"); setMsg({type:"err",text:e.message}); }
+    finally{ setLoading(false); }
+  }
+
+  const fmt = ts => ts ? new Date(ts).toLocaleString("en-IN",{
+    day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"
+  }) : "—";
+
+  const canRecallSweet = selected?.sweetTok && !selected.sweetTok.delivered;
+  const canRecallGift  = selected?.giftTok  && !selected.giftTok.delivered;
+  const canRecallBoth  = canRecallSweet && canRecallGift;
+
+  return(
+    <div className="page">
+      <div className="page-title">Recall <span>Tokens</span></div>
+
+      <div className="grid-2" style={{alignItems:"start"}}>
+
+        {/* ── LEFT: search + action ── */}
+        <div>
+          <div className="card">
+            <div style={{background:"rgba(231,76,60,.07)",border:"1px solid rgba(231,76,60,.2)",
+              borderRadius:8,padding:"11px 14px",marginBottom:18,fontSize:13,lineHeight:1.7}}>
+              <strong style={{color:"var(--red)"}}>Admin only.</strong>{" "}
+              Recall reverses a token assignment. Only possible if the physical item
+              has <strong>not yet been delivered</strong>.
+              The token returns to unassigned and can be re-issued to another member.
+            </div>
+
+            <label className="label">Search by Member Name, Member ID or Token ID</label>
+            <div style={{position:"relative",marginBottom:8}}>
+              <input className="input" placeholder="e.g. Ramesh Kumar / M001 / S0042"
+                value={searchQ} onChange={e=>{setSearchQ(e.target.value);setMsg(null);}}
+                autoComplete="off"/>
+              {searching&&<span style={{position:"absolute",right:14,top:"50%",
+                transform:"translateY(-50%)",color:"var(--muted)"}}>⟳</span>}
+            </div>
+
+            {/* Search results dropdown */}
+            {results.length>0&&(
+              <div className="search-results" style={{marginBottom:12}}>
+                {results.map(m=>(
+                  <div className="search-item" key={m.id} onClick={()=>selectMember(m)}>
+                    <span className="search-item-id">{m.member_id}</span>
+                    <span style={{fontWeight:600}}>{m.member_name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {searchQ.length>=2&&!results.length&&!searching&&(
+              <div className="text-muted mt2" style={{padding:"10px 14px",
+                background:"var(--surface2)",borderRadius:8,marginBottom:12}}>
+                No members found
+              </div>
+            )}
+
+            {msg&&<div className={`alert ${msg.type==="err"?"alert-err":msg.type==="warn"?"alert-warn":"alert-ok"}`}
+              style={{marginBottom:14}}>{msg.text}</div>}
+
+            {/* ── Selected member token panel ── */}
+            {selected&&(
+              <div>
+                <div className="divider"/>
+                {/* Member info */}
+                <div className="member-card" style={{marginBottom:16}}>
+                  <div className="member-id">{selected.member.member_id}</div>
+                  <div className="member-name">{selected.member.member_name}</div>
+                </div>
+
+                {/* Token rows */}
+                {[
+                  {tok:selected.sweetTok, type:"sweet", emoji:"🍬", color:"var(--accent)"},
+                  {tok:selected.giftTok,  type:"gift",  emoji:"🎁", color:"var(--purple)"},
+                ].map(({tok,type,emoji,color})=>(
+                  <div key={type} style={{background:"var(--surface2)",borderRadius:8,
+                    padding:"12px 14px",marginBottom:8,display:"flex",
+                    alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <div style={{flex:1}}>
+                      {tok ? (
+                        <>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                            <span className="mono" style={{fontSize:16,fontWeight:700,color}}>{tok.token_id}</span>
+                            <span style={{fontSize:11,fontWeight:700,color,textTransform:"uppercase",letterSpacing:".06em"}}>{emoji} {type}</span>
+                          </div>
+                          {tok.delivered ? (
+                            <span style={{fontSize:12,color:"var(--green)",fontWeight:700}}>
+                              ✓ Already Delivered — cannot recall
+                            </span>
+                          ) : (
+                            <span style={{fontSize:12,color:"var(--accent)",fontWeight:700}}>
+                              Issued · Pending delivery · Can recall
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span style={{fontSize:13,color:"var(--muted)"}}>
+                          {emoji} No {type} token issued
+                        </span>
+                      )}
+                    </div>
+                    {/* Single recall button */}
+                    {tok&&!tok.delivered&&(
+                      <button className="btn-sm" onClick={()=>recallSingle(tok)} disabled={loading}
+                        style={{borderColor:"var(--red)",color:"var(--red)",whiteSpace:"nowrap"}}>
+                        ↩ Recall
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                {/* Recall both button */}
+                <div style={{marginTop:16,display:"flex",gap:10}}>
+                  {canRecallBoth&&(
+                    <button className="btn btn-red flex-1" onClick={recallTokens} disabled={loading}>
+                      {loading?"⟳ Recalling…":"↩ Recall Both Tokens"}
+                    </button>
+                  )}
+                  <button className="btn btn-outline" onClick={reset} disabled={loading}>
+                    Cancel
+                  </button>
+                </div>
+
+                {!canRecallSweet&&!canRecallGift&&(
+                  <div style={{marginTop:12,fontSize:13,color:"var(--muted)",
+                    background:"var(--surface2)",borderRadius:8,padding:"10px 14px"}}>
+                    Nothing to recall — all delivered or no tokens assigned.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── RIGHT: recall history log ── */}
+        <div className="card">
+          <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>Recall History</div>
+          {logLoading&&<div className="text-muted">Loading…</div>}
+          {!logLoading&&!recallLog.length&&(
+            <div className="text-muted">No recalls performed yet.</div>
+          )}
+          {recallLog.map((r,i)=>{
+            const isSweet = r.action==="recall_sweet";
+            return(
+              <div key={r.id||i} style={{display:"flex",gap:12,padding:"10px 0",
+                borderBottom:"1px solid var(--border)",alignItems:"flex-start"}}>
+                <div style={{fontSize:20,flexShrink:0}}>{isSweet?"🍬":"🎁"}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:700}}>
+                    <span className="mono" style={{color:isSweet?"var(--accent)":"var(--purple)"}}>
+                      {r.token_id}
+                    </span>
+                    {" recalled"}
+                  </div>
+                  <div style={{fontSize:11,color:"var(--muted)",
+                    fontFamily:"'DM Mono',monospace",marginTop:3}}>
+                    {fmt(r.timestamp)} · by {r.operator_name||"Unknown"}
+                  </div>
+                </div>
+                <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:4,
+                  background:"rgba(231,76,60,.1)",color:"var(--red)",border:"1px solid rgba(231,76,60,.2)",
+                  flexShrink:0}}>
+                  RECALLED
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  ROOT APP
 // ═══════════════════════════════════════════════════════════════
 function App(){
@@ -1985,6 +2325,7 @@ function App(){
     {id:"tokens",      label:"Load Tokens"},
     {id:"users",       label:"👥 Users"},
     {id:"allocations", label:"📦 Allocations"},
+    {id:"recall",      label:"↩ Recall Token"},
   ];
 
   const visibleTabs=ALL_TABS.filter(t=>allowedTabs.includes(t.id));
@@ -2017,6 +2358,7 @@ function App(){
       {tab==="tokens"      && <LoadTokensScreen/>}
       {tab==="users"       && user.role==="admin" && <UsersScreen currentUser={user}/>}
       {tab==="allocations" && user.role==="admin" && <CounterAllocationScreen currentUser={user}/>}
+      {tab==="recall"      && user.role==="admin" && <RecallTokenScreen currentUser={user}/>}
     </div>
   );
 }
