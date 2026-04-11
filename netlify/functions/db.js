@@ -17,7 +17,7 @@ const BASE_HEADERS = {
   "Authorization": "Bearer " + SUPABASE_KEY,
 };
 
-const ALLOWED_TABLES = ["members", "tokens", "logs", "app_users", "counter_allocations", "allocation_log"];
+const ALLOWED_TABLES = ["members", "tokens", "logs", "app_users", "counter_allocations", "allocation_log", "event_settings"];
 
 async function query(method, path, body, extra = {}) {
   const url = `${SUPABASE_URL}/rest/v1/${path}`;
@@ -68,6 +68,12 @@ exports.handler = async (event) => {
     }
     else if (op === "insert") {
       result = await query("POST", table, body, { Prefer: "return=representation" });
+      if (Array.isArray(result)) result = result.length ? result[0] : null;
+    }
+    else if (op === "upsert") {
+      result = await query("POST", table, body, {
+        Prefer: "return=representation,resolution=merge-duplicates"
+      });
       if (Array.isArray(result)) result = result.length ? result[0] : null;
     }
     else if (op === "update") {
