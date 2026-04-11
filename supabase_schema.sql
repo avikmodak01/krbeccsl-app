@@ -78,6 +78,27 @@ CREATE TABLE IF NOT EXISTS allocation_log (
 
 CREATE INDEX IF NOT EXISTS idx_alloc_counter ON counter_allocations(counter_name);
 CREATE INDEX IF NOT EXISTS idx_alloc_log_time ON allocation_log(created_at DESC);
+
+-- 7. EVENT SETTINGS  (admin-configurable key-value store)
+CREATE TABLE IF NOT EXISTS event_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Default settings
+INSERT INTO event_settings (key,value) VALUES
+  ('token1_name',   'Sweet'),
+  ('token1_plural', 'Sweets'),
+  ('token1_emoji',  '🍬'),
+  ('token1_prefix', 'S'),
+  ('token2_name',   'Gift'),
+  ('token2_plural', 'Gifts'),
+  ('token2_emoji',  '🎁'),
+  ('token2_prefix', 'G'),
+  ('issueMode',     'paired'),
+  ('eventName',     'KRBECCSL — 100 Years Celebration')
+ON CONFLICT (key) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_members_member_id ON members(member_id);
 CREATE INDEX IF NOT EXISTS idx_tokens_member_id  ON tokens(member_id);
 CREATE INDEX IF NOT EXISTS idx_tokens_type       ON tokens(token_type);
@@ -100,6 +121,9 @@ CREATE POLICY "allow_all_logs"          ON logs                FOR ALL USING (tr
 CREATE POLICY "allow_all_app_users"     ON app_users           FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_allocations"   ON counter_allocations FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_alloc_log"     ON allocation_log      FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE event_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "allow_all_event_settings" ON event_settings FOR ALL USING (true) WITH CHECK (true);
 
 -- ============================================================
 -- SEED: DEFAULT USERS

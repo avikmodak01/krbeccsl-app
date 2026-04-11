@@ -174,6 +174,9 @@ const sb = {
   async insert(table, body){
     return this._call({op:"insert", table, body});
   },
+  async upsert(table, body){
+    return this._call({op:"upsert", table, body});
+  },
   async update(table, patch, match){
     return this._call({op:"update", table, patch, match});
   },
@@ -183,8 +186,49 @@ const sb = {
 };
 
 // ═══════════════════════════════════════════════════════════════
-//  SOUND FEEDBACK
+//  EVENT CONFIG  — loaded from DB, used everywhere in the app.
+//
+//  token1 = first item type (historically "sweet")
+//  token2 = second item type (historically "gift")
+//
+//  issueMode:
+//    "paired"       — scan one QR, both tokens issued together (default)
+//    "independent"  — each token scanned & issued separately
+//    "token1_only"  — only token1 is issued (token2 disabled)
+//    "token2_only"  — only token2 is issued (token1 disabled)
 // ═══════════════════════════════════════════════════════════════
+const DEFAULT_CONFIG = {
+  token1_name:   "Sweet",
+  token1_plural: "Sweets",
+  token1_emoji:  "🍬",
+  token1_prefix: "S",
+  token2_name:   "Gift",
+  token2_plural: "Gifts",
+  token2_emoji:  "🎁",
+  token2_prefix: "G",
+  issueMode:     "paired",   // paired | independent | token1_only | token2_only
+  eventName:     "KRBECCSL — 100 Years Celebration",
+};
+
+const ConfigCtx = React.createContext(DEFAULT_CONFIG);
+function useConfig(){ return React.useContext(ConfigCtx); }
+
+// Singleton store so non-React code can read config too
+let _globalConfig = {...DEFAULT_CONFIG};
+function getConfig(){ return _globalConfig; }
+
+async function loadEventConfig(){
+  try{
+    const rows = await sb.select("event_settings","select=key,value");
+    if(!rows||!rows.length) return {...DEFAULT_CONFIG};
+    const cfg = {...DEFAULT_CONFIG};
+    rows.forEach(r=>{ if(r.key in cfg) cfg[r.key]=r.value; });
+    _globalConfig = cfg;
+    return cfg;
+  }catch{ return {...DEFAULT_CONFIG}; }
+}
+
+
 function beep(type){
   try{
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
@@ -339,258 +383,253 @@ function TokenBadge({label,tokenId,issued,delivered}){
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  SCREEN: ISSUE TOKENS  (PAIRED mode)
+//  SCREEN: ISSUE TOKENS  — config-driven
 //
-//  Tokens are printed in pairs on the SAME card: S0005 + G0005.
-//  Scanning EITHER QR registers BOTH tokens to the member at once.
-//
-//  Flow:
-//    Step 1 → Scan any QR on the pair card (S or G)
-//             Extract the serial number (e.g. "0005" from "S0005")
-//             Derive both IDs: sweetId = S0005, giftId = G0005
-//    Step 2 → Validate both tokens exist and are unassigned
-//    Step 3 → Search & select member
-//             Validate member has neither sweet nor gift token yet
-//    Step 4 → Confirm → assign BOTH atomically
+//  Behaviour controlled by eventConfig.issueMode:
+//    paired       → scan one QR → both tokens issued (original)
+//    independent  → scan token1 OR token2 separately
+//    token1_only  → only token1 issued (token2 doesn't exist)
+//    token2_only  → only token2 issued (token1 doesn't exist)
 // ═══════════════════════════════════════════════════════════════
 function IssueScreen({operator}){
-  const [step,setStep]=useState(1);
-  const [pair,setPair]=useState(null);       // {sweetTok, giftTok, serial, sweetId, giftId}
-  const [member,setMember]=useState(null);
-  const [memberTokens,setMemberTokens]=useState({});
-  const [loading,setLoading]=useState(false);
-  const [msg,setMsg]=useState(null);
+  const cfg = useConfig();
+  const mode = cfg.issueMode || "paired";
+
+  // ── PAIRED MODE state ──────────────────────────────────────
+  const [step,    setStep]   = useState(1);
+  const [pair,    setPair]   = useState(null);
+  const [member,  setMember] = useState(null);
+  const [memberTokens, setMemberTokens] = useState({});
+  const [loading, setLoading]= useState(false);
+  const [msg,     setMsg]    = useState(null);
   const [manualId,setManualId]=useState("");
 
-  function reset(){setStep(1);setPair(null);setMember(null);setMemberTokens({});setMsg(null);}
+  // ── INDEPENDENT / SINGLE MODE state ───────────────────────
+  const [indStep,    setIndStep]   = useState(1);
+  const [indToken,   setIndToken]  = useState(null);   // scanned token row
+  const [indMember,  setIndMember] = useState(null);
+  const [indMemToks, setIndMemToks]= useState({});
+  const [indLoading, setIndLoading]= useState(false);
+  const [indMsg,     setIndMsg]    = useState(null);
+  const [indManual,  setIndManual] = useState("");
+  // For independent mode: which type is being issued right now
+  const [activeType, setActiveType]= useState(
+    mode==="token2_only" ? "token2" : "token1"
+  );
 
-  // ── Extract serial from token_id: "S0005" → "0005", "G0012" → "0012"
+  function reset(){
+    setStep(1);setPair(null);setMember(null);setMemberTokens({});setMsg(null);setManualId("");
+    setIndStep(1);setIndToken(null);setIndMember(null);setIndMemToks({});setIndMsg(null);setIndManual("");
+    setActiveType(mode==="token2_only"?"token2":"token1");
+  }
+
+  // Helper: get token key used in DB ("sweet"/"gift") from config slot
+  function dbType(slot){ return slot==="token1"?"sweet":"gift"; }
+  function cfgName(slot){ return slot==="token1"?cfg.token1_name:cfg.token2_name; }
+  function cfgEmoji(slot){ return slot==="token1"?cfg.token1_emoji:cfg.token2_emoji; }
+  function cfgPrefix(slot){ return slot==="token1"?cfg.token1_prefix:cfg.token2_prefix; }
+  function cfgColor(slot){ return slot==="token1"?"var(--accent)":"var(--purple)"; }
+
   function extractSerial(tokenId){
-    // Remove leading letter(s), keep the numeric suffix
     const m=tokenId.match(/^[A-Za-z]+(\d+)$/);
     return m?m[1]:null;
   }
 
-  // ── Step 1: Scan one QR → derive both S and G token IDs ────
-  async function handleTokenScan(raw){
+  // ════════════════════════════════════════════════════════════
+  //  PAIRED MODE handlers
+  // ════════════════════════════════════════════════════════════
+  async function handlePairedScan(raw){
     setMsg(null);
     let tokenId=raw;
     try{const p=JSON.parse(raw);if(p.token_id) tokenId=p.token_id;}catch{}
     tokenId=tokenId.toUpperCase().trim();
-
     const serial=extractSerial(tokenId);
-    if(!serial){
-      beep("error");
-      setMsg({type:"err",text:`Cannot read token ID from "${tokenId}". Expected format: S0005 or G0005.`});
-      return;
-    }
+    if(!serial){ beep("error"); setMsg({type:"err",text:`Cannot read serial from "${tokenId}".`}); return; }
 
-    const sweetId=`S${serial}`;
-    const giftId =`G${serial}`;
-
+    const t1Id = `${cfg.token1_prefix}${serial}`;
+    const t2Id = `${cfg.token2_prefix}${serial}`;
     try{
-      // Fetch both tokens in one go
-      const rows=await sb.select("tokens",
-        `token_id=in.(${sweetId},${giftId})`
-      );
-
-      const sweetTok=rows.find(t=>t.token_id===sweetId);
-      const giftTok =rows.find(t=>t.token_id===giftId);
-
-      // Validate both exist
-      if(!sweetTok){
-        beep("error");
-        setMsg({type:"err",text:`Sweet token "${sweetId}" is not registered. Load tokens first.`});
-        return;
-      }
-      if(!giftTok){
-        beep("error");
-        setMsg({type:"err",text:`Gift token "${giftId}" is not registered. Load tokens first.`});
-        return;
-      }
-
-      // Check neither is already assigned
-      if(sweetTok.issued||giftTok.issued){
+      const rows = await sb.select("tokens",`token_id=in.(${t1Id},${t2Id})`);
+      const t1 = rows.find(t=>t.token_id===t1Id);
+      const t2 = rows.find(t=>t.token_id===t2Id);
+      if(!t1){ beep("error"); setMsg({type:"err",text:`${cfg.token1_name} token "${t1Id}" not registered. Load tokens first.`}); return; }
+      if(!t2){ beep("error"); setMsg({type:"err",text:`${cfg.token2_name} token "${t2Id}" not registered. Load tokens first.`}); return; }
+      if(t1.issued||t2.issued){
         beep("warning");
         const taken=[];
-        if(sweetTok.issued) taken.push(`${sweetId} (Sweet)`);
-        if(giftTok.issued)  taken.push(`${giftId} (Gift)`);
-        setMsg({type:"warn",
-          text:`Already assigned: ${taken.join(", ")}. This token pair cannot be reused.`
-        });
-        return;
+        if(t1.issued) taken.push(`${t1Id} (${cfg.token1_name})`);
+        if(t2.issued) taken.push(`${t2Id} (${cfg.token2_name})`);
+        setMsg({type:"warn",text:`Already assigned: ${taken.join(", ")}.`}); return;
       }
-
       beep("success");
-      setPair({sweetTok,giftTok,serial,sweetId,giftId});
+      setPair({t1,t2,serial,t1Id,t2Id});
       setStep(2);
-    }catch(e){beep("error");setMsg({type:"err",text:e.message});}
+    }catch(e){ beep("error"); setMsg({type:"err",text:e.message}); }
   }
 
-  async function handleManualToken(){
-    if(!manualId.trim()) return;
-    await handleTokenScan(manualId.trim());
-    setManualId("");
-  }
-
-  // ── Step 2: Select member — validate no existing tokens ────
-  async function handleMemberSelect(m){
+  async function handlePairedMemberSelect(m){
     setMsg(null);
     try{
       const rows=await sb.select("tokens",`member_id=eq.${m.id}&issued=eq.true`);
-      const map={};
-      rows.forEach(t=>{map[t.token_type]=t;});
-
-      // Block if member already has either token type
+      const map={}; rows.forEach(t=>{map[t.token_type]=t;});
       const conflicts=[];
-      if(map.sweet) conflicts.push(`Sweet (${map.sweet.token_id})`);
-      if(map.gift)  conflicts.push(`Gift (${map.gift.token_id})`);
-      if(conflicts.length){
-        beep("error");
-        setMsg({type:"err",
-          text:`${m.member_name} already has: ${conflicts.join(", ")}. Cannot assign again.`
-        });
-        return;
-      }
-
-      setMember(m);
-      setMemberTokens(map);
-      setStep(3);
-    }catch(e){beep("error");setMsg({type:"err",text:e.message});}
+      if(map.sweet) conflicts.push(`${cfg.token1_name} (${map.sweet.token_id})`);
+      if(map.gift)  conflicts.push(`${cfg.token2_name} (${map.gift.token_id})`);
+      if(conflicts.length){ beep("error"); setMsg({type:"err",text:`${m.member_name} already has: ${conflicts.join(", ")}.`}); return; }
+      setMember(m); setMemberTokens(map); setStep(3);
+    }catch(e){ beep("error"); setMsg({type:"err",text:e.message}); }
   }
 
-  // ── Step 3: Confirm — assign BOTH tokens atomically ────────
-  async function confirmAssign(){
-    setLoading(true);setMsg(null);
+  async function confirmPairedAssign(){
+    setLoading(true); setMsg(null);
     const now=new Date().toISOString();
     try{
-      // Update sweet token — WHERE issued=false is the race-condition guard
-      const uSweet=await sb.update(
-        "tokens",
-        {member_id:member.id,issued:true,issued_at:now},
-        {token_id:pair.sweetId,issued:false}
-      );
-      if(!uSweet){
-        beep("error");
-        setMsg({type:"err",text:`Sweet token ${pair.sweetId} was just taken by another operator. Please scan a different pair.`});
-        setLoading(false);return;
+      const u1=await sb.update("tokens",{member_id:member.id,issued:true,issued_at:now},{token_id:pair.t1Id,issued:false});
+      if(!u1){ beep("error"); setMsg({type:"err",text:`${cfg.token1_name} token ${pair.t1Id} just taken. Try another pair.`}); setLoading(false); return; }
+      const u2=await sb.update("tokens",{member_id:member.id,issued:true,issued_at:now},{token_id:pair.t2Id,issued:false});
+      if(!u2){
+        await sb.update("tokens",{member_id:null,issued:false,issued_at:null},{token_id:pair.t1Id}).catch(()=>{});
+        beep("error"); setMsg({type:"err",text:`${cfg.token2_name} token ${pair.t2Id} just taken. Both rolled back.`}); setLoading(false); return;
       }
-
-      // Update gift token
-      const uGift=await sb.update(
-        "tokens",
-        {member_id:member.id,issued:true,issued_at:now},
-        {token_id:pair.giftId,issued:false}
-      );
-      if(!uGift){
-        // Sweet succeeded but gift failed — rollback sweet
-        await sb.update("tokens",{member_id:null,issued:false,issued_at:null},{token_id:pair.sweetId}).catch(()=>{});
-        beep("error");
-        setMsg({type:"err",text:`Gift token ${pair.giftId} was just taken. Both tokens rolled back. Please scan a different pair.`});
-        setLoading(false);return;
-      }
-
-      // Log both
       await Promise.all([
-        sb.insert("logs",{member_id:member.id,token_id:pair.sweetId,action:"issue_sweet",operator_name:operator,timestamp:now}),
-        sb.insert("logs",{member_id:member.id,token_id:pair.giftId, action:"issue_gift", operator_name:operator,timestamp:now})
+        sb.insert("logs",{member_id:member.id,token_id:pair.t1Id,action:"issue_sweet",operator_name:operator,timestamp:now}),
+        sb.insert("logs",{member_id:member.id,token_id:pair.t2Id,action:"issue_gift", operator_name:operator,timestamp:now})
       ]).catch(()=>{});
-
-      beep("success");
-      setMsg({type:"ok",text:`✓ Both tokens assigned to ${member.member_name}.`});
-      setStep(4);
-    }catch(e){beep("error");setMsg({type:"err",text:e.message});}
-    finally{setLoading(false);}
+      beep("success"); setMsg({type:"ok",text:`✓ Both tokens assigned to ${member.member_name}.`}); setStep(4);
+    }catch(e){ beep("error"); setMsg({type:"err",text:e.message}); }
+    finally{ setLoading(false); }
   }
 
-  return(
-    <div className="page">
-      <div className="page-title">Issue <span>Token Pairs</span></div>
+  // ════════════════════════════════════════════════════════════
+  //  INDEPENDENT / SINGLE MODE handlers
+  // ════════════════════════════════════════════════════════════
+  async function handleIndScan(raw){
+    setIndMsg(null);
+    let tokenId=raw;
+    try{const p=JSON.parse(raw);if(p.token_id) tokenId=p.token_id;}catch{}
+    tokenId=tokenId.toUpperCase().trim();
+    try{
+      const rows=await sb.select("tokens",`token_id=eq.${encodeURIComponent(tokenId)}`);
+      if(!rows.length){ beep("error"); setIndMsg({type:"err",text:`Token "${tokenId}" not registered.`}); return; }
+      const tk=rows[0];
+      // Validate the scanned token matches the active type
+      const expectedDbType = dbType(activeType);
+      if(tk.token_type!==expectedDbType){
+        beep("error");
+        setIndMsg({type:"err",text:`Wrong token! "${tokenId}" is a ${tk.token_type} token. Expected a ${cfgName(activeType)} token (prefix ${cfgPrefix(activeType)}).`});
+        return;
+      }
+      if(tk.issued){ beep("warning"); setIndMsg({type:"warn",text:`Token ${tokenId} already assigned.`}); return; }
+      beep("success"); setIndToken(tk); setIndStep(2);
+    }catch(e){ beep("error"); setIndMsg({type:"err",text:e.message}); }
+  }
 
-      {/* Step bar */}
+  async function handleIndMemberSelect(m){
+    setIndMsg(null);
+    try{
+      const rows=await sb.select("tokens",`member_id=eq.${m.id}&issued=eq.true`);
+      const map={}; rows.forEach(t=>{map[t.token_type]=t;});
+      const expectedDbType=dbType(activeType);
+      if(map[expectedDbType]){
+        beep("error");
+        setIndMsg({type:"err",text:`${m.member_name} already has a ${cfgName(activeType)} token (${map[expectedDbType].token_id}).`});
+        return;
+      }
+      setIndMember(m); setIndMemToks(map); setIndStep(3);
+    }catch(e){ beep("error"); setIndMsg({type:"err",text:e.message}); }
+  }
+
+  async function confirmIndAssign(){
+    setIndLoading(true); setIndMsg(null);
+    const now=new Date().toISOString();
+    try{
+      const updated=await sb.update("tokens",{member_id:indMember.id,issued:true,issued_at:now},{token_id:indToken.token_id,issued:false});
+      if(!updated){ beep("error"); setIndMsg({type:"err",text:"Token just taken by another operator."}); setIndLoading(false); return; }
+      await sb.insert("logs",{member_id:indMember.id,token_id:indToken.token_id,
+        action:`issue_${indToken.token_type}`,operator_name:operator,timestamp:now}).catch(()=>{});
+      beep("success");
+      setIndMsg({type:"ok",text:`✓ ${cfgName(activeType)} token ${indToken.token_id} assigned to ${indMember.member_name}.`});
+      setIndStep(4);
+    }catch(e){ beep("error"); setIndMsg({type:"err",text:e.message}); }
+    finally{ setIndLoading(false); }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  //  RENDER
+  // ════════════════════════════════════════════════════════════
+
+  // ── PAIRED MODE UI ─────────────────────────────────────────
+  if(mode==="paired") return(
+    <div className="page">
+      <div className="page-title">Issue <span>Token Pairs</span>
+        <span style={{fontSize:13,fontWeight:600,color:"var(--muted)",marginLeft:10}}>
+          — {cfg.token1_emoji}{cfg.token1_name} + {cfg.token2_emoji}{cfg.token2_name} together
+        </span>
+      </div>
       <div className="steps">
-        {["Scan Token Card","Select Member","Confirm"].map((s,i)=>(
-          <div key={i} className={`step ${step===i+1?"active":step>i+1?"done":""}`}>
-            {step>i+1?"✓ ":""}{s}
-          </div>
+        {["Scan Card","Select Member","Confirm"].map((s,i)=>(
+          <div key={i} className={`step ${step===i+1?"active":step>i+1?"done":""}`}>{step>i+1?"✓ ":""}{s}</div>
         ))}
       </div>
+      {msg&&<div className={`alert ${msg.type==="err"?"alert-err":msg.type==="warn"?"alert-warn":"alert-ok"}`} style={{marginBottom:16}}>{msg.text}</div>}
 
-      {msg&&(
-        <div className={`alert ${msg.type==="err"?"alert-err":msg.type==="warn"?"alert-warn":"alert-ok"}`}
-          style={{marginBottom:16}}>{msg.text}
-        </div>
-      )}
-
-      {/* ── STEP 1: Scan ── */}
       {step===1&&(
         <div className="card">
-          <div style={{background:"rgba(245,166,35,.07)",border:"1px solid rgba(245,166,35,.2)",
-            borderRadius:8,padding:"11px 16px",marginBottom:18,fontSize:13,lineHeight:1.7}}>
-            <strong style={{color:"var(--accent)"}}>Paired Token Mode.</strong>{" "}
-            Scan <em>either</em> the 🍬 Sweet or 🎁 Gift QR on the card —
-            the system will automatically register <strong>both tokens</strong> to the member.
+          <div style={{background:"rgba(245,166,35,.07)",border:"1px solid rgba(245,166,35,.2)",borderRadius:8,padding:"11px 16px",marginBottom:18,fontSize:13,lineHeight:1.7}}>
+            <strong style={{color:"var(--accent)"}}>Paired mode.</strong> Scan <em>either</em> QR on the card — both {cfg.token1_emoji}{cfg.token1_name} + {cfg.token2_emoji}{cfg.token2_name} will be assigned together.
           </div>
-          <QRScanner readerId="reader-issue" onScan={handleTokenScan} label="Scan Token Card QR"/>
+          <QRScanner readerId="reader-issue" onScan={handlePairedScan} label="Scan Token Card QR"/>
           <div className="divider"/>
-          <label className="label">Or enter Token ID manually (S0001 or G0001)</label>
+          <label className="label">Or enter Token ID manually</label>
           <div className="flex gap">
-            <input className="input flex-1 mono" placeholder="e.g. S0005 or G0005"
+            <input className="input flex-1 mono" placeholder={`e.g. ${cfg.token1_prefix}0005 or ${cfg.token2_prefix}0005`}
               value={manualId} onChange={e=>setManualId(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&handleManualToken()}
+              onKeyDown={e=>e.key==="Enter"&&(handlePairedScan(manualId),setManualId(""))}
               style={{letterSpacing:".05em",textTransform:"uppercase"}}/>
-            <button className="btn btn-outline" onClick={handleManualToken}>Look Up</button>
+            <button className="btn btn-outline" onClick={()=>{handlePairedScan(manualId);setManualId("");}}>Look Up</button>
           </div>
         </div>
       )}
 
-      {/* ── STEP 2: Select member ── */}
       {step===2&&pair&&(
         <div className="grid-2">
           <div className="card">
-            <div className="label" style={{marginBottom:12}}>Token Pair — Both will be assigned</div>
-            {/* Show both token chips */}
+            <div className="label" style={{marginBottom:12}}>Token Pair</div>
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
               <div className="token-chip" style={{borderColor:"var(--accent)"}}>
-                <span className="token-chip-id">{pair.sweetId}</span>
-                <span className="token-chip-type sweet">🍬 Sweet</span>
+                <span className="token-chip-id">{pair.t1Id}</span>
+                <span className="token-chip-type sweet">{cfg.token1_emoji} {cfg.token1_name}</span>
               </div>
               <div className="token-chip" style={{borderColor:"var(--purple)"}}>
-                <span className="token-chip-id">{pair.giftId}</span>
-                <span className="token-chip-type gift">🎁 Gift</span>
+                <span className="token-chip-id">{pair.t2Id}</span>
+                <span className="token-chip-type gift">{cfg.token2_emoji} {cfg.token2_name}</span>
               </div>
             </div>
-            <MemberSearch onSelect={handleMemberSelect}/>
+            <MemberSearch onSelect={handlePairedMemberSelect}/>
           </div>
-          <div className="card" style={{display:"flex",flexDirection:"column",justifyContent:"center",
-            alignItems:"center",gap:14,minHeight:220}}>
-            <div style={{fontSize:40}}>🍬 + 🎁</div>
-            <div style={{fontWeight:800,fontSize:22,letterSpacing:".04em",fontFamily:"'DM Mono',monospace"}}>
-              #{pair.serial}
-            </div>
-            <div className="text-muted" style={{textAlign:"center",lineHeight:1.6}}>
-              Both tokens will be assigned<br/>to the selected member
-            </div>
+          <div className="card" style={{display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:14,minHeight:220}}>
+            <div style={{fontSize:40}}>{cfg.token1_emoji} + {cfg.token2_emoji}</div>
+            <div style={{fontWeight:800,fontSize:22,letterSpacing:".04em",fontFamily:"'DM Mono',monospace"}}>#{pair.serial}</div>
+            <div className="text-muted" style={{textAlign:"center",lineHeight:1.6}}>Both tokens assigned together</div>
             <button className="btn btn-outline" onClick={reset}>← Scan Different Card</button>
           </div>
         </div>
       )}
 
-      {/* ── STEP 3: Confirm ── */}
       {step===3&&pair&&member&&(
         <div className="card" style={{maxWidth:520}}>
           <div className="label" style={{marginBottom:14}}>Confirm Assignment</div>
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
             <div>
-              <div className="label">Tokens to be assigned</div>
+              <div className="label">Tokens</div>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 <div className="token-chip" style={{borderColor:"var(--accent)"}}>
-                  <span className="token-chip-id">{pair.sweetId}</span>
-                  <span className="token-chip-type sweet">🍬 Sweet</span>
+                  <span className="token-chip-id">{pair.t1Id}</span>
+                  <span className="token-chip-type sweet">{cfg.token1_emoji} {cfg.token1_name}</span>
                 </div>
                 <div className="token-chip" style={{borderColor:"var(--purple)"}}>
-                  <span className="token-chip-id">{pair.giftId}</span>
-                  <span className="token-chip-type gift">🎁 Gift</span>
+                  <span className="token-chip-id">{pair.t2Id}</span>
+                  <span className="token-chip-type gift">{cfg.token2_emoji} {cfg.token2_name}</span>
                 </div>
               </div>
             </div>
@@ -600,45 +639,165 @@ function IssueScreen({operator}){
                 <div className="member-id">{member.member_id}</div>
                 <div className="member-name">{member.member_name}</div>
                 <div className="token-status">
-                  <TokenBadge label="Sweet" tokenId={memberTokens.sweet?.token_id}
-                    issued={memberTokens.sweet?.issued} delivered={memberTokens.sweet?.delivered}/>
-                  <TokenBadge label="Gift"  tokenId={memberTokens.gift?.token_id}
-                    issued={memberTokens.gift?.issued}  delivered={memberTokens.gift?.delivered}/>
+                  <TokenBadge label={cfg.token1_name} tokenId={memberTokens.sweet?.token_id} issued={memberTokens.sweet?.issued} delivered={memberTokens.sweet?.delivered}/>
+                  <TokenBadge label={cfg.token2_name} tokenId={memberTokens.gift?.token_id}  issued={memberTokens.gift?.issued}  delivered={memberTokens.gift?.delivered}/>
                 </div>
               </div>
             </div>
           </div>
           <div className="divider"/>
           <div className="flex gap">
-            <button className="btn btn-outline flex-1" onClick={()=>{setStep(2);setMember(null);setMsg(null);}}>
-              ← Change Member
-            </button>
-            <button className="btn btn-green flex-1" onClick={confirmAssign} disabled={loading}>
-              {loading?"⟳ Assigning…":"✓ Assign Both Tokens"}
+            <button className="btn btn-outline flex-1" onClick={()=>{setStep(2);setMember(null);setMsg(null);}}>← Change Member</button>
+            <button className="btn btn-green flex-1" onClick={confirmPairedAssign} disabled={loading}>
+              {loading?"⟳ Assigning…":`✓ Assign Both`}
             </button>
           </div>
         </div>
       )}
 
-      {/* ── STEP 4: Success ── */}
       {step===4&&pair&&member&&(
         <div className="card" style={{maxWidth:520}}>
           {msg&&<div className="alert alert-ok" style={{marginBottom:18}}>{msg.text}</div>}
           <div style={{background:"var(--surface2)",borderRadius:10,padding:"18px 20px",marginBottom:20}}>
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
               <div className="token-chip" style={{borderColor:"var(--accent)"}}>
-                <span className="token-chip-id">{pair.sweetId}</span>
-                <span className="token-chip-type sweet">🍬 Sweet</span>
+                <span className="token-chip-id">{pair.t1Id}</span>
+                <span className="token-chip-type sweet">{cfg.token1_emoji} {cfg.token1_name}</span>
               </div>
               <div className="token-chip" style={{borderColor:"var(--purple)"}}>
-                <span className="token-chip-id">{pair.giftId}</span>
-                <span className="token-chip-type gift">🎁 Gift</span>
+                <span className="token-chip-id">{pair.t2Id}</span>
+                <span className="token-chip-type gift">{cfg.token2_emoji} {cfg.token2_name}</span>
               </div>
             </div>
             <div className="member-id">{member.member_id}</div>
             <div className="member-name">{member.member_name}</div>
           </div>
           <button className="btn btn-accent btn-full btn-big" onClick={reset}>+ Issue Next Pair</button>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── INDEPENDENT / SINGLE MODE UI ───────────────────────────
+  const availableTypes =
+    mode==="token1_only" ? ["token1"] :
+    mode==="token2_only" ? ["token2"] :
+    ["token1","token2"];
+
+  return(
+    <div className="page">
+      <div className="page-title">Issue <span>Tokens</span>
+        <span style={{fontSize:13,fontWeight:600,color:"var(--muted)",marginLeft:10}}>
+          — {mode==="independent"?"Scan each separately":mode==="token1_only"?`${cfg.token1_name} only`:`${cfg.token2_name} only`}
+        </span>
+      </div>
+
+      {/* Type selector tabs (only shown in independent mode) */}
+      {mode==="independent"&&(
+        <div style={{display:"flex",gap:0,border:"1px solid var(--border)",borderRadius:10,
+          overflow:"hidden",marginBottom:20,maxWidth:360}}>
+          {availableTypes.map(slot=>(
+            <button key={slot} onClick={()=>{setActiveType(slot);setIndStep(1);setIndToken(null);setIndMember(null);setIndMsg(null);}}
+              style={{flex:1,padding:"12px 16px",fontSize:14,fontWeight:700,cursor:"pointer",
+                border:"none",fontFamily:"'Syne',sans-serif",transition:"all .2s",
+                background:activeType===slot?(slot==="token1"?"rgba(245,166,35,.2)":"rgba(155,89,182,.2)"):"var(--surface2)",
+                color:activeType===slot?cfgColor(slot):"var(--muted)"}}>
+              {cfgEmoji(slot)} {cfgName(slot)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="steps">
+        {["Scan Token","Select Member","Confirm"].map((s,i)=>(
+          <div key={i} className={`step ${indStep===i+1?"active":indStep>i+1?"done":""}`}>{indStep>i+1?"✓ ":""}{s}</div>
+        ))}
+      </div>
+
+      {indMsg&&<div className={`alert ${indMsg.type==="err"?"alert-err":indMsg.type==="warn"?"alert-warn":"alert-ok"}`} style={{marginBottom:16}}>{indMsg.text}</div>}
+
+      {indStep===1&&(
+        <div className="card">
+          <div style={{color:"var(--muted)",fontSize:13,marginBottom:18,lineHeight:1.6}}>
+            Scan the <strong style={{color:cfgColor(activeType)}}>{cfgEmoji(activeType)} {cfgName(activeType)}</strong> token QR (prefix: <span className="mono">{cfgPrefix(activeType)}</span>).
+          </div>
+          <QRScanner readerId="reader-issue" onScan={handleIndScan} label={`Scan ${cfgName(activeType)} Token QR`}/>
+          <div className="divider"/>
+          <label className="label">Or enter Token ID manually</label>
+          <div className="flex gap">
+            <input className="input flex-1 mono" placeholder={`e.g. ${cfgPrefix(activeType)}0005`}
+              value={indManual} onChange={e=>setIndManual(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&(handleIndScan(indManual),setIndManual(""))}
+              style={{letterSpacing:".05em",textTransform:"uppercase"}}/>
+            <button className="btn btn-outline" onClick={()=>{handleIndScan(indManual);setIndManual("");}}>Look Up</button>
+          </div>
+        </div>
+      )}
+
+      {indStep===2&&indToken&&(
+        <div className="grid-2">
+          <div className="card">
+            <div className="label" style={{marginBottom:12}}>Scanned Token</div>
+            <div className="token-chip" style={{borderColor:cfgColor(activeType),marginBottom:20}}>
+              <span className="token-chip-id">{indToken.token_id}</span>
+              <span className={`token-chip-type ${activeType==="token1"?"sweet":"gift"}`}>{cfgEmoji(activeType)} {cfgName(activeType)}</span>
+            </div>
+            <MemberSearch onSelect={handleIndMemberSelect}/>
+          </div>
+          <div className="card" style={{display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:12,minHeight:200}}>
+            <div style={{fontSize:48}}>{cfgEmoji(activeType)}</div>
+            <div style={{fontWeight:800,fontSize:20,color:cfgColor(activeType)}}>{indToken.token_id}</div>
+            <div className="text-muted" style={{textAlign:"center"}}>Select member to assign</div>
+            <button className="btn btn-outline mt" onClick={()=>{setIndStep(1);setIndToken(null);setIndMsg(null);}}>← Scan Different Token</button>
+          </div>
+        </div>
+      )}
+
+      {indStep===3&&indToken&&indMember&&(
+        <div className="card" style={{maxWidth:500}}>
+          <div className="label" style={{marginBottom:14}}>Confirm Assignment</div>
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <div>
+              <div className="label">Token</div>
+              <div className="token-chip" style={{borderColor:cfgColor(activeType)}}>
+                <span className="token-chip-id">{indToken.token_id}</span>
+                <span className={`token-chip-type ${activeType==="token1"?"sweet":"gift"}`}>{cfgEmoji(activeType)} {cfgName(activeType)}</span>
+              </div>
+            </div>
+            <div>
+              <div className="label">Member</div>
+              <div className="member-card">
+                <div className="member-id">{indMember.member_id}</div>
+                <div className="member-name">{indMember.member_name}</div>
+                <div className="token-status">
+                  <TokenBadge label={cfg.token1_name} tokenId={indMemToks.sweet?.token_id} issued={indMemToks.sweet?.issued} delivered={indMemToks.sweet?.delivered}/>
+                  <TokenBadge label={cfg.token2_name} tokenId={indMemToks.gift?.token_id}  issued={indMemToks.gift?.issued}  delivered={indMemToks.gift?.delivered}/>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="divider"/>
+          <div className="flex gap">
+            <button className="btn btn-outline flex-1" onClick={()=>{setIndStep(2);setIndMember(null);setIndMsg(null);}}>← Change Member</button>
+            <button className="btn btn-green flex-1" onClick={confirmIndAssign} disabled={indLoading}>
+              {indLoading?"⟳ Assigning…":`✓ Assign ${cfgName(activeType)}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {indStep===4&&indToken&&indMember&&(
+        <div className="card" style={{maxWidth:500}}>
+          {indMsg&&<div className="alert alert-ok" style={{marginBottom:18}}>{indMsg.text}</div>}
+          <div style={{background:"var(--surface2)",borderRadius:10,padding:"16px 20px",marginBottom:20}}>
+            <div className="token-chip" style={{borderColor:cfgColor(activeType),marginBottom:12}}>
+              <span className="token-chip-id">{indToken.token_id}</span>
+              <span className={`token-chip-type ${activeType==="token1"?"sweet":"gift"}`}>{cfgEmoji(activeType)} {cfgName(activeType)}</span>
+            </div>
+            <div className="member-id">{indMember.member_id}</div>
+            <div className="member-name">{indMember.member_name}</div>
+          </div>
+          <button className="btn btn-accent btn-full btn-big" onClick={reset}>+ Issue Next Token</button>
         </div>
       )}
     </div>
@@ -654,6 +813,7 @@ function IssueScreen({operator}){
 //  Admin can top up any time.
 // ═══════════════════════════════════════════════════════════════
 function CounterAllocationScreen({currentUser}){
+  const cfg = useConfig();
   const [allocations, setAllocations] = useState([]);
   const [history,     setHistory]     = useState([]);
   const [loading,     setLoading]     = useState(true);
@@ -667,8 +827,8 @@ function CounterAllocationScreen({currentUser}){
   const [saving,    setSaving]    = useState(false);
 
   const COUNTERS = [
-    "Sweet Counter 1","Sweet Counter 2",
-    "Gift Counter 1","Gift Counter 2",
+    `${cfg.token1_name} Counter 1`,`${cfg.token1_name} Counter 2`,
+    `${cfg.token2_name} Counter 1`,`${cfg.token2_name} Counter 2`,
   ];
 
   async function load(){
@@ -688,9 +848,9 @@ function CounterAllocationScreen({currentUser}){
 
   // Auto-set token type based on counter selection
   useEffect(()=>{
-    if(fCounter.toLowerCase().includes("sweet")) setFType("sweet");
-    else if(fCounter.toLowerCase().includes("gift")) setFType("gift");
-  },[fCounter]);
+    if(fCounter.toLowerCase().includes(cfg.token1_name.toLowerCase())) setFType("sweet");
+    else if(fCounter.toLowerCase().includes(cfg.token2_name.toLowerCase())) setFType("gift");
+  },[fCounter, cfg]);
 
   async function handleAllocate(){
     const qty = parseInt(fQty);
@@ -737,7 +897,8 @@ function CounterAllocationScreen({currentUser}){
   }) : "—";
 
   const typeColor = t => t==="sweet"?"var(--accent)":"var(--purple)";
-  const typeEmoji = t => t==="sweet"?"🍬":"🎁";
+  const typeEmoji = t => t==="sweet"?cfg.token1_emoji:cfg.token2_emoji;
+  const typeName  = t => t==="sweet"?cfg.token1_name:cfg.token2_name;
 
   return(
     <div className="page">
@@ -763,13 +924,13 @@ function CounterAllocationScreen({currentUser}){
                 fontSize:13,cursor:"pointer",border:"none",fontFamily:"'Syne',sans-serif",
                 background:fType==="sweet"?"rgba(245,166,35,.2)":"var(--surface2)",
                 color:fType==="sweet"?"var(--accent)":"var(--muted)"}}>
-                🍬 Sweet
+                {cfg.token1_emoji} {cfg.token1_name}
               </button>
               <button onClick={()=>setFType("gift")} style={{flex:1,padding:"10px",fontWeight:700,
                 fontSize:13,cursor:"pointer",border:"none",fontFamily:"'Syne',sans-serif",
                 background:fType==="gift"?"rgba(155,89,182,.2)":"var(--surface2)",
                 color:fType==="gift"?"var(--purple)":"var(--muted)"}}>
-                🎁 Gift
+                {cfg.token2_emoji} {cfg.token2_name}
               </button>
             </div>
 
@@ -787,7 +948,7 @@ function CounterAllocationScreen({currentUser}){
               <div style={{background:"var(--surface2)",borderRadius:8,padding:"10px 14px",
                 marginBottom:16,fontSize:13,lineHeight:1.7}}>
                 <span style={{color:"var(--muted)"}}>Issuing </span>
-                <strong style={{color:typeColor(fType)}}>{fQty} {fType} item{fQty>1?"s":""}</strong>
+                <strong style={{color:typeColor(fType)}}>{fQty} {typeName(fType)} item{fQty>1?"s":""}</strong>
                 <span style={{color:"var(--muted)"}}> to </span>
                 <strong style={{color:"var(--text)"}}>{fCounter}</strong>
               </div>
@@ -812,7 +973,7 @@ function CounterAllocationScreen({currentUser}){
                 <div style={{fontSize:20,flexShrink:0}}>{typeEmoji(h.token_type)}</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:13,fontWeight:700}}>
-                    <span style={{color:typeColor(h.token_type)}}>{h.quantity} {h.token_type}</span>
+                    <span style={{color:typeColor(h.token_type)}}>{h.quantity} {typeName(h.token_type)}</span>
                     {" → "}{h.counter_name}
                   </div>
                   {h.note&&<div style={{fontSize:12,color:"var(--muted)",marginTop:2}}>{h.note}</div>}
@@ -859,7 +1020,7 @@ function CounterAllocationScreen({currentUser}){
                         <div style={{display:"flex",justifyContent:"space-between",
                           alignItems:"center",marginBottom:8}}>
                           <span style={{fontWeight:700,fontSize:13,color:typeColor(type)}}>
-                            {typeEmoji(type)} {type.charAt(0).toUpperCase()+type.slice(1)}
+                            {typeEmoji(type)} {typeName(type)}
                           </span>
                           <span style={{fontFamily:"'DM Mono',monospace",fontSize:13}}>
                             <span style={{color:barColor,fontWeight:800}}>{remaining}</span>
@@ -891,12 +1052,17 @@ function CounterAllocationScreen({currentUser}){
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  SCREEN: DISTRIBUTION  (sweet or gift counter)
-//
-//  Now quota-aware: loads this counter's allocation on mount,
-//  shows remaining count, blocks delivery when exhausted.
+//  SCREEN: DISTRIBUTION  (token1 or token2 counter)
+//  Now uses EventConfig for custom token names.
 // ═══════════════════════════════════════════════════════════════
 function DistributionScreen({type, operator}){
+  const cfg = useConfig();
+  // type is still "sweet" or "gift" internally in DB
+  // we display the custom name from config
+  const cfgSlot  = type==="sweet" ? "token1" : "token2";
+  const tn       = type==="sweet" ? cfg.token1_name   : cfg.token2_name;
+  const te       = type==="sweet" ? cfg.token1_emoji  : cfg.token2_emoji;
+  const tc       = type==="sweet" ? "var(--accent)"   : "var(--purple)";
   const [tokenRec,  setTokenRec]  = useState(null);
   const [member,    setMember]    = useState(null);
   const [status,    setStatus]    = useState(null);
@@ -993,10 +1159,6 @@ function DistributionScreen({type, operator}){
     }catch(e){ beep("error"); setErrMsg(e.message); }
     finally{ setLoading(false); }
   }
-
-  const tc=type==="sweet"?"var(--accent)":"var(--purple)";
-  const te=type==="sweet"?"🍬":"🎁";
-  const tn=type.charAt(0).toUpperCase()+type.slice(1);
 
   const remaining = quota ? quota.allocated-(quota.used||0) : null;
   const quotaBlocked = quota!==null && remaining<=0;
@@ -1232,10 +1394,11 @@ function ReportTable({columns, rows, emptyText="No records found.", filename="re
 //  SCREEN: DASHBOARD + REPORTS
 // ═══════════════════════════════════════════════════════════════
 function DashboardScreen(){
+  const cfg = useConfig();
   const [activeTab, setActiveTab] = useState("overview");
   const [stats,   setStats]   = useState(null);
   const [feed,    setFeed]    = useState([]);
-  const [allData, setAllData] = useState(null); // {members, tokens}
+  const [allData, setAllData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reportLoading, setReportLoading] = useState(false);
 
@@ -1243,9 +1406,12 @@ function DashboardScreen(){
   const fmtTime = ts=>ts?new Date(ts).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"";
 
   const AL={
-    issue_sweet:"🍬 Sweet Issued",issue_gift:"🎁 Gift Issued",
-    deliver_sweet:"🍬 Sweet Delivered",deliver_gift:"🎁 Gift Delivered",
-    recall_sweet:"↩ Sweet Token Recalled",recall_gift:"↩ Gift Token Recalled"
+    issue_sweet:   `${cfg.token1_emoji} ${cfg.token1_name} Issued`,
+    issue_gift:    `${cfg.token2_emoji} ${cfg.token2_name} Issued`,
+    deliver_sweet: `${cfg.token1_emoji} ${cfg.token1_name} Delivered`,
+    deliver_gift:  `${cfg.token2_emoji} ${cfg.token2_name} Delivered`,
+    recall_sweet:  `↩ ${cfg.token1_name} Token Recalled`,
+    recall_gift:   `↩ ${cfg.token2_name} Token Recalled`,
   };
 
   // Load summary stats (runs every 10s on overview tab)
@@ -1308,7 +1474,7 @@ function DashboardScreen(){
         .filter(t=>!t.issued && !t.member_id)
         .map(t=>({
           token_id: t.token_id,
-          token_type: t.token_type==="sweet"?"🍬 Sweet":"🎁 Gift",
+          token_type: t.token_type,
           status: "Unassigned"
         }))
         .sort((a,b)=>a.token_id.localeCompare(b.token_id));
@@ -1351,29 +1517,29 @@ function DashboardScreen(){
   }
 
   const reportTabs = [
-    { id:"overview",        label:"📊 Overview",          icon:"📊" },
-    { id:"token_collected", label:"🎟 Token Collected",    icon:"🎟" },
-    { id:"pending_delivery",label:"⏳ Pending Delivery",   icon:"⏳" },
-    { id:"fully_delivered", label:"✅ Fully Delivered",    icon:"✅" },
-    { id:"no_token",        label:"❌ No Token Yet",       icon:"❌" },
-    { id:"unassigned",      label:"📦 Unassigned Tokens",  icon:"📦" },
+    { id:"overview",        label:"📊 Overview" },
+    { id:"token_collected", label:"🎟 Token Collected" },
+    { id:"pending_delivery",label:"⏳ Pending Delivery" },
+    { id:"fully_delivered", label:`✅ Fully Delivered` },
+    { id:"no_token",        label:"❌ No Token Yet" },
+    { id:"unassigned",      label:"📦 Unassigned Tokens" },
   ];
 
   const memberCols = [
     {key:"member_id",   label:"Member ID",    mono:true},
     {key:"member_name", label:"Name"},
-    {key:"sweet_token", label:"🍬 Token",     mono:true},
-    {key:"sweet_status",label:"🍬 Status",    color:v=>v==="✓ Delivered"?"var(--green)":v==="Pending"?"var(--accent)":"var(--muted)"},
-    {key:"sweet_time",  label:"🍬 Time",      mono:true},
-    {key:"gift_token",  label:"🎁 Token",     mono:true},
-    {key:"gift_status", label:"🎁 Status",    color:v=>v==="✓ Delivered"?"var(--green)":v==="Pending"?"var(--accent)":"var(--muted)"},
-    {key:"gift_time",   label:"🎁 Time",      mono:true},
+    {key:"sweet_token", label:`${cfg.token1_emoji} Token`,  mono:true},
+    {key:"sweet_status",label:`${cfg.token1_emoji} Status`, color:v=>v==="✓ Delivered"?"var(--green)":v==="Pending"?"var(--accent)":"var(--muted)"},
+    {key:"sweet_time",  label:`${cfg.token1_emoji} Time`,   mono:true},
+    {key:"gift_token",  label:`${cfg.token2_emoji} Token`,  mono:true},
+    {key:"gift_status", label:`${cfg.token2_emoji} Status`, color:v=>v==="✓ Delivered"?"var(--green)":v==="Pending"?"var(--accent)":"var(--muted)"},
+    {key:"gift_time",   label:`${cfg.token2_emoji} Time`,   mono:true},
   ];
 
   const unassignedCols = [
-    {key:"token_id",   label:"Token ID",   mono:true},
-    {key:"token_type", label:"Type"},
-    {key:"status",     label:"Status",     color:()=>"var(--muted)"},
+    {key:"token_id",   label:"Token ID",  mono:true},
+    {key:"token_type", label:"Type",      render:(v)=>v==="sweet"?`${cfg.token1_emoji} ${cfg.token1_name}`:`${cfg.token2_emoji} ${cfg.token2_name}`},
+    {key:"status",     label:"Status",    color:()=>"var(--muted)"},
   ];
 
   const reportFilenames = {
@@ -1387,7 +1553,7 @@ function DashboardScreen(){
   const reportEmpty = {
     token_collected:  "No members have collected a token yet.",
     pending_delivery: "No pending deliveries — everyone is up to date!",
-    fully_delivered:  "No members have received both items yet.",
+    fully_delivered:  `No members have received both ${cfg.token1_plural} and ${cfg.token2_plural} yet.`,
     no_token:         "All members have been assigned at least one token.",
     unassigned:       "No unassigned tokens remaining.",
   };
@@ -1435,35 +1601,35 @@ function DashboardScreen(){
                 </div>
                 <div className="stat-card col-accent">
                   <div className="stat-val" style={{color:"var(--accent)"}}>{stats.si}</div>
-                  <div className="stat-label">🍬 Sweet Issued</div>
+                  <div className="stat-label">{cfg.token1_emoji} {cfg.token1_name} Issued</div>
                 </div>
                 <div className="stat-card col-purple">
                   <div className="stat-val" style={{color:"var(--purple)"}}>{stats.gi}</div>
-                  <div className="stat-label">🎁 Gift Issued</div>
+                  <div className="stat-label">{cfg.token2_emoji} {cfg.token2_name} Issued</div>
                 </div>
                 <div className="stat-card col-green">
                   <div className="stat-val" style={{color:"var(--green)"}}>{stats.sd}</div>
-                  <div className="stat-label">🍬 Sweet Delivered</div>
+                  <div className="stat-label">{cfg.token1_emoji} {cfg.token1_name} Delivered</div>
                 </div>
                 <div className="stat-card col-green">
                   <div className="stat-val" style={{color:"var(--green)"}}>{stats.gd}</div>
-                  <div className="stat-label">🎁 Gift Delivered</div>
+                  <div className="stat-label">{cfg.token2_emoji} {cfg.token2_name} Delivered</div>
                 </div>
                 <div className="stat-card col-red">
                   <div className="stat-val" style={{color:"var(--accent2)"}}>{stats.si-stats.sd}</div>
-                  <div className="stat-label">🍬 Sweet Pending</div>
+                  <div className="stat-label">{cfg.token1_emoji} {cfg.token1_name} Pending</div>
                 </div>
                 <div className="stat-card col-red">
                   <div className="stat-val" style={{color:"var(--accent2)"}}>{stats.gi-stats.gd}</div>
-                  <div className="stat-label">🎁 Gift Pending</div>
+                  <div className="stat-label">{cfg.token2_emoji} {cfg.token2_name} Pending</div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-val" style={{color:"var(--muted)"}}>{stats.ts-stats.si}</div>
-                  <div className="stat-label">🍬 Unassigned</div>
+                  <div className="stat-label">{cfg.token1_emoji} Unassigned</div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-val" style={{color:"var(--muted)"}}>{stats.tg-stats.gi}</div>
-                  <div className="stat-label">🎁 Unassigned</div>
+                  <div className="stat-label">{cfg.token2_emoji} Unassigned</div>
                 </div>
               </div>
 
@@ -1471,8 +1637,8 @@ function DashboardScreen(){
               <div className="card mt">
                 <div style={{fontWeight:700,fontSize:14,marginBottom:16}}>Completion Progress</div>
                 {[
-                  {label:"🍬 Sweet Delivered",val:stats.sd,total:stats.si,color:"var(--accent)"},
-                  {label:"🎁 Gift Delivered", val:stats.gd,total:stats.gi,color:"var(--purple)"},
+                  {label:`${cfg.token1_emoji} ${cfg.token1_name} Delivered`,val:stats.sd,total:stats.si,color:"var(--accent)"},
+                  {label:`${cfg.token2_emoji} ${cfg.token2_name} Delivered`,val:stats.gd,total:stats.gi,color:"var(--purple)"},
                 ].map(p=>{
                   const pct=p.total>0?Math.round(p.val/p.total*100):0;
                   return(
@@ -1610,6 +1776,7 @@ function ImportMembersScreen(){
 //       500 gift tokens printed G001–G500
 // ═══════════════════════════════════════════════════════════════
 function LoadTokensScreen(){
+  const cfg = useConfig();
   const [prefix,setPrefix]=useState("S");
   const [start,setStart]=useState(1);
   const [end,setEnd]=useState(100);
@@ -1648,11 +1815,11 @@ function LoadTokensScreen(){
 
         <label className="label">Token Type</label>
         <div className="flex gap" style={{marginBottom:18}}>
-          <button className={`btn flex-1 ${prefix==="S"?"btn-accent":"btn-outline"}`} onClick={()=>setPrefix("S")}>
-            🍬 Sweet Tokens (S)
+          <button className={`btn flex-1 ${prefix===cfg.token1_prefix?"btn-accent":"btn-outline"}`} onClick={()=>setPrefix(cfg.token1_prefix)}>
+            {cfg.token1_emoji} {cfg.token1_name} Tokens ({cfg.token1_prefix})
           </button>
-          <button className={`btn flex-1 ${prefix==="G"?"btn-green":"btn-outline"}`} onClick={()=>setPrefix("G")}>
-            🎁 Gift Tokens (G)
+          <button className={`btn flex-1 ${prefix===cfg.token2_prefix?"btn-green":"btn-outline"}`} onClick={()=>setPrefix(cfg.token2_prefix)}>
+            {cfg.token2_emoji} {cfg.token2_name} Tokens ({cfg.token2_prefix})
           </button>
         </div>
 
@@ -1693,12 +1860,177 @@ function LoadTokensScreen(){
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  SCREEN: EVENT SETTINGS  (Admin only)
+//  Configure token names, emojis, prefixes, and issue mode.
+//  Changes take effect immediately — stored in event_settings table.
+// ═══════════════════════════════════════════════════════════════
+function EventSettingsScreen({onConfigChange}){
+  const cfg = useConfig();
+  const [form, setForm] = useState({...cfg});
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  function set(key,val){ setForm(f=>({...f,[key]:val})); }
+
+  async function save(){
+    setLoading(true); setMsg(null);
+    try{
+      // Upsert all settings as a batch using insert with upsert Prefer header
+      const pairs = Object.entries(form).map(([key,value])=>({key,value,updated_at:new Date().toISOString()}));
+      await sb.upsert("event_settings", pairs);
+      _globalConfig = {...form};
+      onConfigChange({...form});
+      beep("success");
+      setMsg({type:"ok",text:"✓ Settings saved. Changes are live immediately."});
+    }catch(e){ beep("error"); setMsg({type:"err",text:e.message}); }
+    finally{ setLoading(false); }
+  }
+
+  const MODES = [
+    { id:"paired",       label:"Paired",        desc:`Scan one QR → both ${form.token1_name} + ${form.token2_name} issued together` },
+    { id:"independent",  label:"Independent",   desc:`Each token scanned and issued separately` },
+    { id:"token1_only",  label:`${form.token1_name||"Token 1"} Only`, desc:`Only ${form.token1_name} tokens issued. ${form.token2_name} not used.` },
+    { id:"token2_only",  label:`${form.token2_name||"Token 2"} Only`, desc:`Only ${form.token2_name} tokens issued. ${form.token1_name} not used.` },
+  ];
+
+  const FieldRow = ({label,children})=>(
+    <div style={{marginBottom:14}}>
+      <label className="label">{label}</label>
+      {children}
+    </div>
+  );
+
+  return(
+    <div className="page">
+      <div className="page-title">Event <span>Settings</span></div>
+
+      <div className="grid-2" style={{alignItems:"start"}}>
+
+        {/* ── Token Names ── */}
+        <div className="card">
+          <div style={{fontWeight:800,fontSize:15,marginBottom:18}}>Token 1 (internally "sweet")</div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:4}}>
+            <FieldRow label="Display Name (singular)">
+              <input className="input" placeholder="e.g. Sweet, Memento, Bedsheet"
+                value={form.token1_name} onChange={e=>set("token1_name",e.target.value)}/>
+            </FieldRow>
+            <FieldRow label="Plural Name">
+              <input className="input" placeholder="e.g. Sweets, Mementos"
+                value={form.token1_plural} onChange={e=>set("token1_plural",e.target.value)}/>
+            </FieldRow>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <FieldRow label="Emoji">
+              <input className="input" placeholder="🍬" maxLength={4}
+                value={form.token1_emoji} onChange={e=>set("token1_emoji",e.target.value)}
+                style={{fontSize:20}}/>
+            </FieldRow>
+            <FieldRow label="QR Prefix (letter only)">
+              <input className="input mono" placeholder="S" maxLength={3}
+                value={form.token1_prefix} onChange={e=>set("token1_prefix",e.target.value.toUpperCase())}
+                style={{fontSize:18,letterSpacing:".1em"}}/>
+            </FieldRow>
+          </div>
+
+          {/* Preview */}
+          <div style={{background:"var(--surface2)",borderRadius:8,padding:"10px 14px",marginTop:4,display:"flex",alignItems:"center",gap:10}}>
+            <div className="token-chip" style={{borderColor:"var(--accent)"}}>
+              <span className="token-chip-id">{form.token1_prefix||"S"}0001</span>
+              <span className="token-chip-type sweet">{form.token1_emoji} {form.token1_name}</span>
+            </div>
+            <span style={{color:"var(--muted)",fontSize:12}}>preview</span>
+          </div>
+
+          <div className="divider"/>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:18}}>Token 2 (internally "gift")</div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:4}}>
+            <FieldRow label="Display Name (singular)">
+              <input className="input" placeholder="e.g. Gift, Saree, Dhoti"
+                value={form.token2_name} onChange={e=>set("token2_name",e.target.value)}/>
+            </FieldRow>
+            <FieldRow label="Plural Name">
+              <input className="input" placeholder="e.g. Gifts, Sarees"
+                value={form.token2_plural} onChange={e=>set("token2_plural",e.target.value)}/>
+            </FieldRow>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <FieldRow label="Emoji">
+              <input className="input" placeholder="🎁" maxLength={4}
+                value={form.token2_emoji} onChange={e=>set("token2_emoji",e.target.value)}
+                style={{fontSize:20}}/>
+            </FieldRow>
+            <FieldRow label="QR Prefix (letter only)">
+              <input className="input mono" placeholder="G" maxLength={3}
+                value={form.token2_prefix} onChange={e=>set("token2_prefix",e.target.value.toUpperCase())}
+                style={{fontSize:18,letterSpacing:".1em"}}/>
+            </FieldRow>
+          </div>
+
+          <div style={{background:"var(--surface2)",borderRadius:8,padding:"10px 14px",marginTop:4,display:"flex",alignItems:"center",gap:10}}>
+            <div className="token-chip" style={{borderColor:"var(--purple)"}}>
+              <span className="token-chip-id">{form.token2_prefix||"G"}0001</span>
+              <span className="token-chip-type gift">{form.token2_emoji} {form.token2_name}</span>
+            </div>
+            <span style={{color:"var(--muted)",fontSize:12}}>preview</span>
+          </div>
+        </div>
+
+        {/* ── Issue Mode + Event Name ── */}
+        <div>
+          <div className="card" style={{marginBottom:16}}>
+            <div style={{fontWeight:800,fontSize:15,marginBottom:18}}>Issue Mode</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {MODES.map(m=>(
+                <div key={m.id} onClick={()=>set("issueMode",m.id)}
+                  style={{padding:"14px 16px",borderRadius:10,cursor:"pointer",
+                    border:`2px solid ${form.issueMode===m.id?"var(--accent)":"var(--border)"}`,
+                    background:form.issueMode===m.id?"rgba(245,166,35,.07)":"var(--surface2)",
+                    transition:"all .2s"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:18,height:18,borderRadius:"50%",border:`2px solid ${form.issueMode===m.id?"var(--accent)":"var(--border)"}`,
+                      background:form.issueMode===m.id?"var(--accent)":"transparent",
+                      display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      {form.issueMode===m.id&&<div style={{width:8,height:8,borderRadius:"50%",background:"#000"}}/>}
+                    </div>
+                    <span style={{fontWeight:700,fontSize:14,color:form.issueMode===m.id?"var(--accent)":"var(--text)"}}>{m.label}</span>
+                  </div>
+                  <div style={{fontSize:12,color:"var(--muted)",marginTop:5,marginLeft:28,lineHeight:1.5}}>{m.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{marginBottom:16}}>
+            <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>Event Name</div>
+            <input className="input" placeholder="KRBECCSL — 100 Years Celebration"
+              value={form.eventName} onChange={e=>set("eventName",e.target.value)}/>
+            <div style={{fontSize:12,color:"var(--muted)",marginTop:8}}>Shown on the login screen subtitle.</div>
+          </div>
+
+          {msg&&<div className={`alert ${msg.type==="err"?"alert-err":"alert-ok"}`} style={{marginBottom:14}}>{msg.text}</div>}
+
+          <button className="btn btn-accent btn-full btn-big" onClick={save} disabled={loading}>
+            {loading?"⟳ Saving…":"✓ Save Settings"}
+          </button>
+          <div style={{fontSize:12,color:"var(--muted)",marginTop:10,textAlign:"center",lineHeight:1.6}}>
+            Changes take effect immediately for all users.<br/>
+            Prefix changes only affect new tokens — existing tokens keep their IDs.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  ROLE DEFINITIONS
 //  Each role maps to a list of allowed tab IDs.
 //  Admin sees everything including the Users management tab.
 // ═══════════════════════════════════════════════════════════════
 const ROLES = {
-  admin:       { label:"Admin",            color:"#e74c3c", tabs:["issue","sweet","gift","dashboard","members","tokens","users","allocations","recall"] },
+  admin:       { label:"Admin",            color:"#e74c3c", tabs:["issue","sweet","gift","dashboard","members","tokens","users","allocations","recall","settings"] },
   issue:       { label:"Token Issue",      color:"#f5a623", tabs:["issue"] },
   sweet:       { label:"Sweet Counter",    color:"#f5a623", tabs:["sweet"] },
   gift:        { label:"Gift Counter",     color:"#9b59b6", tabs:["gift"] },
@@ -2048,10 +2380,11 @@ function RecallTokenScreen({currentUser}){
       return;
     }
 
+    const c = getConfig();
     if(!window.confirm(
       `Recall ALL issued tokens for ${member.member_name}?\n\n` +
-      `${sweetTok?`🍬 Sweet: ${sweetTok.token_id}\n`:""}` +
-      `${giftTok ?`🎁 Gift:  ${giftTok.token_id}\n`:""}` +
+      `${sweetTok?`${c.token1_emoji} ${c.token1_name}: ${sweetTok.token_id}\n`:""}` +
+      `${giftTok ?`${c.token2_emoji} ${c.token2_name}: ${giftTok.token_id}\n`:""}` +
       `\nThese tokens will be returned to unassigned status.`
     )) return;
 
@@ -2299,67 +2632,70 @@ function RecallTokenScreen({currentUser}){
 //  ROOT APP
 // ═══════════════════════════════════════════════════════════════
 function App(){
-  const [user,setUser]=useState(null);
-  const [tab,setTab]=useState(null);
+  const [user, setUser] = useState(null);
+  const [tab,  setTab]  = useState(null);
+  const [cfg,  setCfg]  = useState(DEFAULT_CONFIG);
 
-  // On login: set tab AND pre-load members cache immediately
   function handleLogin(u){
     setUser(u);
-    const allowed=ROLES[u.role]?.tabs||[];
+    const allowed = ROLES[u.role]?.tabs||[];
     setTab(allowed[0]||"issue");
-    // Load all members into memory now so search is instant later
     membersCache.load();
     membersCache.startRefresh();
+    // Load event config from DB; update context when ready
+    loadEventConfig().then(c=>{ setCfg(c); });
   }
 
   if(!user) return <LoginScreen onLogin={handleLogin}/>;
 
-  const allowedTabs=ROLES[user.role]?.tabs||[];
+  const allowedTabs = ROLES[user.role]?.tabs||[];
+  const roleDef = ROLES[user.role];
+  if(tab && !allowedTabs.includes(tab)) setTab(allowedTabs[0]);
 
   const ALL_TABS=[
     {id:"issue",       label:"Issue Tokens"},
-    {id:"sweet",       label:"🍬 Sweet Counter"},
-    {id:"gift",        label:"🎁 Gift Counter"},
+    {id:"sweet",       label:`${cfg.token1_emoji} ${cfg.token1_name} Counter`},
+    {id:"gift",        label:`${cfg.token2_emoji} ${cfg.token2_name} Counter`},
     {id:"dashboard",   label:"📊 Dashboard"},
     {id:"members",     label:"Members"},
     {id:"tokens",      label:"Load Tokens"},
     {id:"users",       label:"👥 Users"},
     {id:"allocations", label:"📦 Allocations"},
     {id:"recall",      label:"↩ Recall Token"},
+    {id:"settings",    label:"⚙ Settings"},
   ];
-
-  const visibleTabs=ALL_TABS.filter(t=>allowedTabs.includes(t.id));
-  const roleDef=ROLES[user.role];
-
-  if(tab&&!allowedTabs.includes(tab)) setTab(allowedTabs[0]);
+  const visibleTabs = ALL_TABS.filter(t=>allowedTabs.includes(t.id));
 
   return(
-    <div>
-      <nav className="nav">
-        <div className="nav-brand">KRBECCSL 100Y</div>
-        {visibleTabs.map(t=>(
-          <div key={t.id} className={`nav-tab ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</div>
-        ))}
-        <div className="nav-right">
-          <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:12,
-            background:roleDef.color+"22",color:roleDef.color,border:`1px solid ${roleDef.color}44`}}>
-            {roleDef.label}
-          </span>
-          <span className="nav-user">{user.display_name}</span>
-          <button className="btn-sm" onClick={()=>setUser(null)}>Sign Out</button>
-        </div>
-      </nav>
+    <ConfigCtx.Provider value={cfg}>
+      <div>
+        <nav className="nav">
+          <div className="nav-brand">KRBECCSL 100Y</div>
+          {visibleTabs.map(t=>(
+            <div key={t.id} className={`nav-tab ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</div>
+          ))}
+          <div className="nav-right">
+            <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:12,
+              background:roleDef.color+"22",color:roleDef.color,border:`1px solid ${roleDef.color}44`}}>
+              {roleDef.label}
+            </span>
+            <span className="nav-user">{user.display_name}</span>
+            <button className="btn-sm" onClick={()=>setUser(null)}>Sign Out</button>
+          </div>
+        </nav>
 
-      {tab==="issue"       && <IssueScreen      operator={user.display_name}/>}
-      {tab==="sweet"       && <DistributionScreen type="sweet" operator={user.display_name}/>}
-      {tab==="gift"        && <DistributionScreen type="gift"  operator={user.display_name}/>}
-      {tab==="dashboard"   && <DashboardScreen/>}
-      {tab==="members"     && <ImportMembersScreen/>}
-      {tab==="tokens"      && <LoadTokensScreen/>}
-      {tab==="users"       && user.role==="admin" && <UsersScreen currentUser={user}/>}
-      {tab==="allocations" && user.role==="admin" && <CounterAllocationScreen currentUser={user}/>}
-      {tab==="recall"      && user.role==="admin" && <RecallTokenScreen currentUser={user}/>}
-    </div>
+        {tab==="issue"       && <IssueScreen      operator={user.display_name}/>}
+        {tab==="sweet"       && <DistributionScreen type="sweet" operator={user.display_name}/>}
+        {tab==="gift"        && <DistributionScreen type="gift"  operator={user.display_name}/>}
+        {tab==="dashboard"   && <DashboardScreen/>}
+        {tab==="members"     && <ImportMembersScreen/>}
+        {tab==="tokens"      && <LoadTokensScreen/>}
+        {tab==="users"       && user.role==="admin" && <UsersScreen currentUser={user}/>}
+        {tab==="allocations" && user.role==="admin" && <CounterAllocationScreen currentUser={user}/>}
+        {tab==="recall"      && user.role==="admin" && <RecallTokenScreen currentUser={user}/>}
+        {tab==="settings"    && user.role==="admin" && <EventSettingsScreen onConfigChange={c=>setCfg(c)}/>}
+      </div>
+    </ConfigCtx.Provider>
   );
 }
 
